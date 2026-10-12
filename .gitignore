@@ -6,3 +6,6 @@ assets/clawd/clawd-*.svg
 assets/sounds/
 # 改版时的设计稿，内含真实会话数据
 design-demos/
+# 宣传片和封面的成品 / 候选稿，体积大，不进仓库
+ccmon-demo*.mp4
+cover-*.jpg
