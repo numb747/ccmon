@@ -13,7 +13,8 @@ Claude Code 会话监控站 —— 在旁边另一台设备上用浏览器盯着
     每条都带行号，前端可以点开看原始 JSON —— 解析漏了也不会丢信息。
 
 访问控制：防君子不防小人。内网谁都能打开，但要先输密码（存在 .password，明文一行）；
-本机自己访问免密码。登录后发一年期 cookie，改密码后旧 cookie 全部失效。
+本机自己访问免密码（经反向代理转发来的不算，见 is_local）。输错有限速（LoginLimiter）。
+登录后发一年期 cookie，改密码后旧 cookie 全部失效。
 """
 from __future__ import annotations
 
@@ -38,6 +39,15 @@ PORT = int(os.environ.get("CCMON_PORT", "18767"))
 PASSWORD_FILE = HERE / ".password"
 COOKIE = "ccmon_auth"
 COOKIE_AGE = 365 * 86400
+# 本机访问免密码。反向代理和 ccmon 在同一台机器上时，外面来的请求看起来也是本机，
+# 这时设 CCMON_LOCAL_NOAUTH=0 关掉，否则密码形同虚设。
+LOCAL_NOAUTH = os.environ.get("CCMON_LOCAL_NOAUTH", "1") != "0"
+# 带着这些头的请求是代理转发来的，不算本机。只是兜底：代理不一定会加（nginx 默认就不加）。
+PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+                 "X-Real-IP", "Via")
+LOGIN_WINDOW_SEC = 300    # 登录限速的统计窗口
+LOGIN_MAX_PER_IP = 5      # 窗口内每个 IP 最多输错几次
+LOGIN_MAX_TOTAL = 30      # 窗口内所有 IP 合计最多输错几次（挡换着 IP 猜）
 
 PROJECTS = C.PROJECTS_DIR
 HISTORY_SEC = 24 * 3600   # 侧栏「最近结束」收录多久以内动过的会话
@@ -57,7 +67,6 @@ PAGES = {"/": "index.html", "/cats": "cats.html", "/farm": "farm.html",
 ASSET_RE = re.compile(r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\.(svg|gif|png|js|mp3)$")
 ASSET_TYPES = {".svg": "image/svg+xml", ".gif": "image/gif", ".png": "image/png",
                ".js": "text/javascript; charset=utf-8", ".mp3": "audio/mpeg"}
-DEMO_RE = re.compile(r"^[A-Za-z0-9_-]+\.(html|png)$")
 # 路径后面有时跟着字面的 \\n（嵌套转义过的输出），所以遇到反斜杠也停
 PERSIST_RE = re.compile(r"Full output saved to: ([^\s\\]+)")
 TAG_RE = re.compile(r"<[^>]+>")
@@ -433,14 +442,21 @@ def resolve_log(q: dict) -> Path | None:
 
 # ================================================================ 密码
 
+# 自动生成的密码用的字符：去掉了 0/o、1/l/i 这几个容易看错的
+PW_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+# 早期版本自动生成的样子，只有一万种可能
+WEAK_PW_RE = re.compile(r"^clawd\d{4}$")
+
+
 def password() -> str:
-    """每次请求都现读文件：改密码直接改 .password，不用重启。第一次启动自动生成一个好记的。"""
+    """每次请求都现读文件：改密码直接改 .password，不用重启。第一次启动自动生成一个。"""
     try:
         pw = PASSWORD_FILE.read_text().strip()
     except OSError:
         pw = ""
     if not pw:
-        pw = f"clawd{secrets.randbelow(10000):04d}"
+        # 3 组 × 4 个字符，约 59 位熵；每台设备只用输一次，长一点不碍事
+        pw = "-".join("".join(secrets.choice(PW_ALPHABET) for _ in range(4)) for _ in range(3))
         PASSWORD_FILE.write_text(pw + "\n")
         PASSWORD_FILE.chmod(0o600)
         print(f"生成了访问密码：{pw}（在 {PASSWORD_FILE}）", flush=True)
@@ -450,6 +466,34 @@ def password() -> str:
 def auth_token(pw: str) -> str:
     # cookie 只存密码的 HMAC，不存密码本身；密码一改，token 就对不上了
     return hmac.new(pw.encode(), b"ccmon-login-v1", hashlib.sha256).hexdigest()
+
+
+class LoginLimiter:
+    """登录限速。先占名额再比密码，密码对了才退回 —— 并发着猜也只拿得到窗口里剩下的那几次。
+
+    合计上限会让猜密码的人把别人也挡在登录页外面几分钟；已经登录的设备不受影响。
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.tries: list[tuple[float, str]] = []   # (时刻, ip)，只留窗口内的
+
+    def enter(self, ip: str) -> bool:
+        now = time.time()
+        with self.lock:
+            self.tries = [x for x in self.tries if now - x[0] < LOGIN_WINDOW_SEC]
+            if (len(self.tries) >= LOGIN_MAX_TOTAL
+                    or sum(1 for _, i in self.tries if i == ip) >= LOGIN_MAX_PER_IP):
+                return False
+            self.tries.append((now, ip))
+            return True
+
+    def clear(self, ip: str):
+        with self.lock:
+            self.tries = [x for x in self.tries if x[1] != ip]
+
+
+LOGINS = LoginLimiter()
 
 
 LOGIN_HTML = """<!doctype html>
@@ -498,6 +542,8 @@ class Handler(BaseHTTPRequestHandler):
         return ip[7:] if ip.startswith("::ffff:") else ip
 
     def is_local(self) -> bool:
+        if not LOCAL_NOAUTH or any(self.headers.get(h) for h in PROXY_HEADERS):
+            return False
         ip = self.client_ip()
         if ip.startswith("127.") or ip == "::1":
             return True
@@ -540,12 +586,18 @@ class Handler(BaseHTTPRequestHandler):
         n = min(int(self.headers.get("Content-Length") or 0), 4096)
         form = {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace")).items()}
         nxt = self.safe_next(form.get("next", "/"))
+        ip = self.client_ip()
+        if not LOGINS.enter(ip):
+            sys.stderr.write(f"登录被限速 {ip}\n")
+            self.login_page(nxt, "试得太多了，过几分钟再来", 429)
+            return
         pw = password()
         if hmac.compare_digest(form.get("password", "").strip().encode(), pw.encode()):
-            sys.stderr.write(f"登录 {self.client_ip()}\n")
+            LOGINS.clear(ip)
+            sys.stderr.write(f"登录 {ip}\n")
             self.redirect(nxt, f"{COOKIE}={auth_token(pw)}; Max-Age={COOKIE_AGE}; Path=/; HttpOnly; SameSite=Lax")
         else:
-            sys.stderr.write(f"密码错误 {self.client_ip()}\n")
+            sys.stderr.write(f"密码错误 {ip}\n")
             time.sleep(1)  # 拖慢一下乱猜
             self.login_page(nxt, "密码不对，再试一次", 401)
 
@@ -587,8 +639,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.tool_file(q)
             elif u.path.startswith("/assets/"):
                 self.asset_file(u.path[len("/assets/"):])
-            elif u.path.startswith("/demos/"):
-                self.demo_file(u.path[len("/demos/"):] or "index.html")
             else:
                 self.send_body(404, b"not found\n", "text/plain")
         except (BrokenPipeError, ConnectionResetError):
@@ -667,15 +717,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(p.read_bytes())
 
-    def demo_file(self, name: str):
-        """改版时的设计稿对比页（design-demos/），方便在笔记本上直接翻看。"""
-        p = HERE / "design-demos" / name
-        if not DEMO_RE.match(name) or not p.is_file():
-            self.send_body(404, b"not found\n", "text/plain")
-            return
-        ctype = "image/png" if name.endswith(".png") else "text/html; charset=utf-8"
-        self.send_body(200, p.read_bytes(), ctype)
-
     def tool_file(self, q: dict):
         """工具输出太大时 Claude Code 会落盘到 <sid>/tool-results/，transcript 里只留 2KB 预览。"""
         p = Path(q.get("p", "/nonexistent"))
@@ -697,8 +738,12 @@ def main():
     threading.Thread(target=BOARD.run, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.daemon_threads = True
-    password()  # 没有密码文件就现在生成，好在日志里看到
-    print(f"ccmon 监听 0.0.0.0:{PORT}，内网访问要密码（{PASSWORD_FILE}），本机免密码", flush=True)
+    pw = password()  # 没有密码文件就现在生成，好在日志里看到
+    if WEAK_PW_RE.match(pw):
+        print(f"⚠ 现在的密码是早期版本自动生成的，只有一万种可能。"
+              f"建议换一个：改 {PASSWORD_FILE}，或删掉它重启让 ccmon 重新生成", flush=True)
+    print(f"ccmon 监听 0.0.0.0:{PORT}，内网访问要密码（{PASSWORD_FILE}），"
+          f"本机{'免密码' if LOCAL_NOAUTH else '也要密码'}", flush=True)
     srv.serve_forever()
 
 

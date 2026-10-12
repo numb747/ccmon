@@ -8,6 +8,8 @@ After=network-online.target
 ExecStart=/usr/bin/python3 %h/ccmon/app.py
 Environment=CCMON_PORT=18767
 Environment=PYTHONUNBUFFERED=1
+# 本机上还有反向代理转发到 ccmon 的话，取消下面这行的注释，让本机访问也要密码
+#Environment=CCMON_LOCAL_NOAUTH=0
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 Restart=on-failure
 RestartSec=3

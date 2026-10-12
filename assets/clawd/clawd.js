@@ -1,6 +1,7 @@
-// Clawd —— Claude Code 的像素小螃蟹。三个主题（猫舍 / 农场 / 夜景公寓）共用这一个文件。
+// Clawd —— Claude Code 的像素小螃蟹。三个主题（宿舍 / 农场 / 夜景公寓）共用这一个文件。
 //
-// 素材：~/ccmon/assets/clawd/*.svg，拷自 rullerzhou-afk/clawd-on-desk（AGPL-3.0，只在本机内网自用，别外发）。
+// 素材：assets/clawd/clawd-*.svg，来自 rullerzhou-afk/clawd-on-desk（AGPL-3.0），不随本仓库分发，
+// 由 scripts/fetch-assets.sh 下载到本地。
 // 每个 svg 自带 CSS 动画，用 <img> 引用就会自己动；换 src 会让动画从头播，所以 set() 只在文件真变了时才换。
 //
 // 坐标：47 个 svg 共用 viewBox (-15 -25 45 45)，单位 = 1 个 Clawd 像素。身体占 x 0..15、y 6..16（脚底 y=16）。
