@@ -1,0 +1,8 @@
+# 访问密码（首次启动自动生成）
+.password
+__pycache__/
+# 第三方素材：用 scripts/fetch-assets.sh 下载，不随仓库分发
+assets/clawd/clawd-*.svg
+assets/sounds/
+# 改版时的设计稿，内含真实会话数据
+design-demos/

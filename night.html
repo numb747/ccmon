@@ -1,0 +1,1226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude 监控 · 夜景公寓</title>
+<style>
+:root{
+  --sans:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC","Source Han Sans SC",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code","Adwaita Mono","Sarasa Mono SC",Consolas,monospace;
+  /* 夜：近黑 → 靛 → 地平线一点点暖灰。暖色只留给「有人在干活」 */
+  --sky0:#0b0c14; --sky1:#111320; --sky2:#181b2d; --sky3:#23263a; --sky4:#353542; --sky5:#4d4441;
+  --far:#2a2a3a; --near:#1b1d2c;
+  --facade:#252839; --ledge:#33374f; --frame:#12131c;
+  --ground:#1c1f2e; --street:#101119;
+  --fg:#c0caf5; --fg2:#a9b1d6; --fg3:#9aa5ce;
+  --lamp:#e0af68; --cream:#ece0c3; --ink:#1f2131; --red:#f7768e;
+  --moon:#dfe5f7;
+  --ww:286px; --wh:204px; --gap:64px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--sans); color:var(--fg); font-size:15px;
+  background:linear-gradient(to bottom,var(--sky0) 0%,var(--sky1) 22%,var(--sky2) 40%,var(--sky3) 55%,var(--sky4) 66%,var(--sky5) 78%) fixed;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+
+#scene{position:fixed;inset:0;transition:transform .6s cubic-bezier(.3,.7,.2,1)}
+#scene.zoomed{transform:scale(1.18)}
+#scene.zoomed *{animation-play-state:paused!important}  /* 屋里看详情时，楼外的动画先停，省 CPU */
+#scene.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3b4261 transparent}
+
+/* ---------- 天空 ---------- */
+.stars{position:fixed;inset:0 0 40% 0;pointer-events:none}
+.stars i{position:absolute;width:2px;height:2px;border-radius:50%;background:#c0caf5}
+.stars i.b{width:3px;height:3px}
+.stars i.tw{animation:tw 6s ease-in-out infinite}
+@keyframes tw{0%,100%{opacity:.25}50%{opacity:.85}}
+.moon{position:fixed;right:150px;top:58px;width:120px;height:120px}
+
+.status{position:fixed;left:84px;top:54px;max-width:1000px;z-index:2}
+.status .hl{font-size:40px;font-weight:700;letter-spacing:.02em;line-height:1.2;color:var(--fg)}
+.status .hl b{font-family:var(--mono);font-weight:700}
+.status .hl .lit{color:var(--lamp)}
+.status .hl .sl{color:#89a7e8}
+.status .hl .wt{color:var(--red)}
+.status .hl .sep{color:#565f89;margin:0 .35em;font-weight:400}
+.crumbs{position:fixed;left:84px;top:12px;z-index:7;max-width:calc(100vw - 200px);display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:13px;color:var(--fg3);letter-spacing:.04em}
+.crumbs a{color:inherit;text-decoration:none;cursor:pointer}
+.crumbs a b{color:var(--fg)}
+.crumbs .here{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.crumbs a:hover{color:var(--fg);text-decoration:underline;text-underline-offset:3px}
+.status .sub{margin-top:12px;font-size:14px;color:var(--fg3);letter-spacing:.04em}
+.status .sub .m{font-family:var(--mono)}
+.status .conn{margin-top:8px;font-size:13px;color:#e0c08a;display:none}
+.status .conn.show{display:block}
+.status .tools{margin-top:10px;display:flex;gap:16px}
+.status .tools button{font-size:13px;color:var(--fg3);border-bottom:1px dashed #3e4567;padding-bottom:1px}
+.status .tools button:hover{color:var(--fg)}
+.status .tools button.on{color:var(--lamp);border-bottom-color:#7a6440}
+
+/* ---------- 远景楼 ---------- */
+.skyline{position:fixed;left:0;right:0;bottom:46px;width:100%;pointer-events:none}
+
+/* ---------- 公寓 ---------- */
+.building{position:absolute;left:50%;bottom:46px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:stretch}
+.roof{position:relative;height:44px}
+.roof .parapet{position:absolute;left:-10px;right:-10px;bottom:0;height:16px;background:#2e3249;border-radius:2px 2px 0 0}
+.roof .tank{position:absolute;right:70px;bottom:16px;width:86px;height:70px}
+.roof .antenna{position:absolute;left:84px;bottom:16px;width:40px;height:74px}
+
+/* 楼顶那只 Clawd：承担全局状态 */
+.roofc{position:absolute;bottom:13px;left:200px}
+/* 楼顶这只是「楼管」：平时不在，只有有人等你时才跑上房顶喊；点它直接进那一户 */
+.roofc:not(.alert){display:none}
+.roofc.alert{cursor:pointer}
+.roofc .bub{position:absolute;left:calc(100% + 2px);bottom:22px;white-space:nowrap;font-size:13px;font-weight:700;color:#2b1d22;background:#f3c6cf;padding:3px 9px;border-radius:4px;display:none}
+.roofc.alert .bub{display:block}
+.roofc .bub::before{content:"";position:absolute;left:-6px;bottom:6px;border:4px solid transparent;border-right:6px solid #f3c6cf;border-left:0}
+/* 窗里的住户 */
+.clawd.res{position:absolute!important;left:50%;bottom:4%;transform:translateX(-50%)}
+.clawd.mini{position:absolute!important;bottom:2%}
+.clawd.m0{left:17%}.clawd.m1{right:18%}.clawd.m2{left:31%;bottom:0}
+.cool .glass .clawd img,.rw.dim .clawd img{filter:brightness(.7) saturate(.7) hue-rotate(-8deg)}  /* 熄灯：住户沉进冷光里，但不透明，轮廓清楚 */
+.s-dead .glass .clawd img,.rw.gone .clawd img{filter:brightness(.5) saturate(.4)}
+.ava{width:20px;height:auto;image-rendering:pixelated}
+
+.body{position:relative;background:var(--facade);
+  background-image:repeating-linear-gradient(to bottom,transparent 0 23px,rgba(0,0,0,.09) 23px 24px),
+    linear-gradient(to right,rgba(0,0,0,.18) 0,transparent 26px,transparent calc(100% - 18px),rgba(160,175,230,.05) calc(100% - 18px));
+  padding:0 70px}
+.body::after{content:"";position:absolute;right:30px;top:0;bottom:0;width:7px;background:#30344b;border-left:1px solid #3a3f58}
+.floor{display:grid;grid-template-columns:repeat(var(--cols),var(--ww));column-gap:var(--gap);justify-content:center;
+  padding:30px 0 22px;border-top:7px solid var(--ledge)}
+.floor:first-child{border-top:0}
+.vacant{grid-column:1/-1;width:440px;padding:26px 0 30px;text-align:center}
+.vacant .w{margin:0 auto 18px;width:220px;height:140px;border:8px solid var(--frame);border-radius:3px;background:linear-gradient(#1b1f31,#222840);position:relative}
+.vacant .w::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(to right,#2b3150 0 16px,#232842 16px 19px)}
+.vacant p{font-size:15px;color:var(--fg2)}
+
+.unit{position:relative;display:flex;flex-direction:column;align-items:center;outline:none}
+.win{position:relative;width:var(--ww);height:var(--wh);border:8px solid var(--frame);border-radius:3px;
+  box-shadow:inset 0 0 0 2px #2c3150;background:#0e0f17;transition:transform .35s ease}
+.win .glass{position:absolute;inset:0;overflow:hidden}
+.win .glass svg{display:block;width:100%;height:100%}
+.win .glass::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(118deg,transparent 0 18%,rgba(255,255,255,.07) 18% 22%,transparent 22% 27%,rgba(255,255,255,.045) 27% 29%,transparent 29%)}
+.win .transom{position:absolute;left:0;right:0;top:22%;height:5px;background:var(--frame)}
+/* 开灯 / 关灯的短过渡 */
+.win .sw{position:absolute;inset:0;pointer-events:none;opacity:0}
+.win .sw.on{background:#0e0f17;animation:lighton .9s ease-out}
+.win .sw.off{background:#f3d9a6;animation:lightoff 1.1s ease-out}
+@keyframes lighton{0%{opacity:1}25%{opacity:.35}38%{opacity:.9}55%{opacity:.2}100%{opacity:0}}
+@keyframes lightoff{0%{opacity:.75}100%{opacity:0}}
+.sill{width:calc(var(--ww) + 16px);height:9px;background:#3d4260;border-bottom:3px solid #2a2e44;border-radius:1px;transition:background .6s}
+.unit:not(.cool) .sill{background:#6e5a44;border-bottom-color:#4a3e36}
+.unit:hover .win,.unit:focus-visible .win{transform:translateY(-3px)}
+.unit:focus-visible .plate{outline:2px solid var(--lamp);outline-offset:3px}
+
+.zz{position:absolute;left:18%;top:-14px;width:40px;height:70px;pointer-events:none;font-family:var(--mono);color:var(--fg);font-weight:700;display:none}
+.unit.s-idle .zz,.unit.s-done .zz{display:block}
+.zz span{position:absolute;left:0;bottom:0;opacity:0;animation:zz 4.2s ease-out infinite}
+.zz span:nth-child(1){font-size:15px;animation-delay:-.7s}
+.zz span:nth-child(2){font-size:19px;animation-delay:-2.1s}
+.zz span:nth-child(3){font-size:25px;animation-delay:-3.5s}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}18%{opacity:.85}100%{opacity:0;transform:translate(26px,-62px)}}
+.tall .zz{top:-8px}
+.tall .zz span{animation-name:zzs}
+@keyframes zzs{0%{opacity:0;transform:translate(0,0)}18%{opacity:.85}100%{opacity:0;transform:translate(22px,-40px)}}
+
+/* 「干完啦」「喊你了」：窗上冒一个小气泡，几秒后消失 */
+.pop{position:absolute;left:50%;top:-14px;transform:translate(-50%,-100%);white-space:nowrap;padding:4px 11px;border-radius:5px;
+  font-size:13px;font-weight:700;pointer-events:none;animation:pop 6s ease-out forwards;z-index:2}
+.pop::after{content:"";position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-bottom:0}
+.pop.d{background:#e9dfc6;color:#3b2f1a}.pop.d::after{border-top-color:#e9dfc6}
+.pop.w{background:#f3c6cf;color:#4a1d28}.pop.w::after{border-top-color:#f3c6cf}
+@keyframes pop{0%{opacity:0;transform:translate(-50%,-80%)}8%{opacity:1;transform:translate(-50%,-100%)}80%{opacity:1}100%{opacity:0}}
+
+/* 门牌 */
+.plate{position:relative;margin-top:14px;width:calc(var(--ww) - 18px);padding:9px 12px 10px;border-radius:4px;
+  background:var(--cream);color:var(--ink);box-shadow:0 3px 0 #b3a47f;transition:background .6s}
+.plate::before,.plate::after{content:"";position:absolute;top:-14px;width:2px;height:14px;background:#4a4f6c}
+.plate::before{left:22px}.plate::after{right:22px}
+.unit.cool .plate{background:#bcc5e0;box-shadow:0 3px 0 #8790b0}
+.unit.s-waiting .plate{box-shadow:0 3px 0 #b3a47f,0 0 0 3px #d04760}
+/* 在等你：窗框和窗台也换成红色，余光里和「干活中」的暖窗一眼分开 */
+.unit.s-waiting .win{border-color:#8a2c40;box-shadow:inset 0 0 0 2px #b8445c}
+.unit.s-waiting .win .transom{background:#8a2c40}
+.unit.s-waiting .sill{background:#a3384f;border-bottom-color:#6b2232}
+.plate .st{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#4a3d22}
+.unit.cool .plate .st{color:#2a3150}
+.unit.s-waiting .plate .st{color:#a3263f}
+.plate .st b{font-family:var(--mono);font-size:14px}
+.bulb{width:10px;height:10px;border-radius:50%;background:#d08a2e;box-shadow:0 0 0 2px rgba(208,138,46,.25);flex:none}
+.unit.cool .bulb{background:transparent;border:2px solid #4a5478;box-shadow:none}
+.unit.s-waiting .bulb{background:#d04760;box-shadow:0 0 0 2px rgba(208,71,96,.25)}
+.plate .ttl{margin-top:5px;font-size:15px;font-weight:700;line-height:1.38;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.plate .nm{margin-top:4px;font-family:var(--mono);font-size:12.5px;color:#4d4a40;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.unit.cool .plate .nm{color:#353d5c}
+.plate .nm .sub{font-family:var(--sans);margin-left:6px}
+.ac{position:absolute;left:calc(100% + 9px);top:calc(var(--wh) - 30px);width:36px;height:30px;background:#3a3f5b;border-radius:2px;box-shadow:inset 0 -3px 0 #30344c}
+.ac::before{content:"";position:absolute;left:5px;top:5px;width:18px;height:18px;border-radius:50%;background:repeating-radial-gradient(circle,#2a2e44 0 2px,#3a3f5b 2px 4px)}
+
+/* 两层及以上：楼靠右，状态句竖排在左边天空里 */
+.tall .building{left:auto;right:84px;transform:none}
+.tall .status .pt{display:block}
+.tall .status .sep{display:none}
+.tall .status{left:52px;top:40px;max-width:250px}
+.tall .status .hl{line-height:1.3;font-size:30px}
+.tall .moon{right:auto;left:110px;top:auto;bottom:330px}
+.tall .floor{padding:16px 0 12px}
+.tall .plate{padding:7px 11px 8px}
+.tall .plate .ttl{font-size:14.5px;margin-top:3px}
+.tall .plate .nm{margin-top:2px}
+.tall .ground{height:140px}
+.tall .mail{margin-bottom:10px}
+.tall .roof{height:40px}
+.tall .entry .door{height:72px}
+.tall .entry .sign{margin-bottom:5px;padding:2px 12px}
+.scroll .building{position:relative;left:auto;right:auto;bottom:auto;margin:40px 84px 46px auto;width:max-content}
+.scroll .skyline{display:none}
+
+/* ---------- 一楼 ---------- */
+.ground{position:relative;height:168px;border-top:7px solid var(--ledge);background:var(--ground);
+  display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:0 64px 0 56px}
+.mail{position:relative;margin-bottom:18px;padding:10px 12px 12px;background:#2b3047;border:2px solid #3a4060;border-radius:3px}
+.mail .lb{display:flex;align-items:baseline;gap:10px;margin-bottom:9px;white-space:nowrap}
+.mail .lb b{font-size:15px;color:var(--fg)}
+.mail .lb span{font-size:13px;color:var(--fg3)}
+.mail .slots{display:grid;grid-template-columns:repeat(7,26px);gap:5px}
+.slot{position:relative;height:30px;background:#363c59;border-radius:2px;box-shadow:inset 0 -2px 0 #2c3149}
+.slot::before{content:"";position:absolute;left:5px;right:5px;top:8px;height:3px;background:#1a1c29;border-radius:2px}
+.slot i{position:absolute;left:7px;top:2px;width:13px;height:8px;background:#d9cdb0;border-radius:1px;transform:rotate(-6deg)}
+.slot.old i{background:#8f8a7c;top:5px;height:5px}
+.slot.empty i{display:none}
+.mail:hover{border-color:#565f89}
+.entry{position:relative;align-self:flex-end;display:flex;flex-direction:column;align-items:center}
+.entry .sign{margin-bottom:8px;padding:4px 12px;background:var(--cream);color:var(--ink);font-size:14px;font-weight:700;border-radius:3px;letter-spacing:.12em}
+.entry .canopy{width:170px;height:10px;background:#3a3f5b;border-radius:2px}
+.entry .lampc{width:8px;height:5px;background:#c8d3f5;border-radius:0 0 4px 4px}
+.entry .door{margin-top:6px;width:104px;height:110px;border:6px solid var(--frame);border-bottom:0;background:linear-gradient(#2e3756,#232a44);display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.entry .door i{background:linear-gradient(160deg,rgba(255,255,255,.06),transparent 40%);border-right:5px solid var(--frame)}
+.entry .door i:last-child{border-right:0}
+.entry .step{width:150px;height:8px;background:#2f3347}
+.bike{width:150px;height:84px;margin-bottom:6px;flex:none}
+
+.street{position:fixed;left:0;right:0;bottom:0;height:46px;background:var(--street);border-top:2px solid #262a3d;z-index:1}
+.street::after{content:"";position:absolute;left:0;right:0;top:24px;height:2px;background:repeating-linear-gradient(to right,#232636 0 40px,transparent 40px 90px)}
+/* 主题切换：街角的小路牌 */
+.signpost{position:fixed;right:36px;bottom:10px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.signpost::before{content:"";position:absolute;left:14px;top:-4px;bottom:0;width:4px;background:#3a3f5b;z-index:-1}
+.signpost a{display:block;padding:2px 12px 2px 10px;font-size:12.5px;font-weight:700;color:#d9dff5;background:#2f3a5c;text-decoration:none;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 50%,calc(100% - 8px) 100%,0 100%);padding-right:16px}
+.signpost a:nth-child(2){background:#3a4a3c;color:#dde8d2}
+.signpost a:hover{filter:brightness(1.25)}
+.signpost .here{font-size:12px;color:var(--fg3);padding-left:24px}
+
+/* ---------- 窗里的动效 ---------- */
+.room .cone{animation:flick 7.5s infinite}
+@keyframes flick{0%,90%,100%{opacity:.5}91.5%{opacity:.28}93%{opacity:.5}94.5%{opacity:.36}}
+.room .steam{animation:steam 4s ease-in-out infinite}
+@keyframes steam{0%{opacity:0;transform:translateY(2px)}40%{opacity:.55}100%{opacity:0;transform:translateY(-6px)}}
+.room .ember{animation:ember 5s ease-in-out infinite}
+@keyframes ember{0%,100%{opacity:.16}50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<style>
+/* ---------- 详情：推进到那扇窗 ---------- */
+#scrim{position:fixed;inset:0;background:rgba(8,9,15,.72);opacity:0;pointer-events:none;transition:opacity .45s;z-index:5}
+#scrim.open{opacity:1;pointer-events:auto}
+.panel{position:fixed;left:72px;top:36px;right:72px;bottom:36px;display:none;z-index:6;
+  border:14px solid var(--frame);border-radius:6px;background:#1a1b28;box-shadow:inset 0 0 0 2px #2c3150,0 30px 80px rgba(0,0,0,.45)}
+.panel.open{display:grid;grid-template-columns:348px 1fr}
+.panel .in{opacity:1;transition:opacity .35s .25s}
+.panel.flying .in{opacity:0;transition:none}
+
+.side{position:relative;background:#1e2030;border-right:2px solid #2c3150;padding:22px 22px 18px;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3b4261 transparent}
+.side .rw{position:relative;flex:none;height:244px;border:7px solid var(--frame);border-radius:3px;box-shadow:inset 0 0 0 2px #2c3150;overflow:hidden}
+.side .rw svg{display:block;width:100%;height:100%}
+.side .rw,.win .glass{contain:paint}
+/* 刚推门、时间线还在下载时，屋里的动画先停一下：SVG 动画占主线程，会拖慢大段记录的解析 */
+.panel.loading *{animation-play-state:paused!important}
+.side .unit{display:block}
+.side .plate{width:auto;margin:16px 6px 0}
+.side .plate .ttl{-webkit-line-clamp:3;font-size:16px}
+.meta{margin-top:20px;display:grid;grid-template-columns:auto 1fr;gap:9px 14px;font-size:14px;align-content:start}
+.meta dt{color:var(--fg3);font-size:13px;padding-top:1px;white-space:nowrap}
+.meta dd{color:var(--fg);word-break:break-all;min-width:0}
+.meta dd.mono{font-family:var(--mono);font-size:13.5px}
+.meta dd.q{color:var(--fg2);line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.kits{display:flex;flex-direction:column;gap:2px}
+.kits button{display:flex;align-items:center;gap:8px;padding:4px 6px;margin-left:-6px;border-radius:4px;font-size:13.5px;color:var(--fg2);min-width:0}
+.kits button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kits button:hover{background:#262a3e;color:var(--fg)}
+.kits button.sel{background:#2b2f47;color:var(--fg)}
+.kits i{width:8px;height:8px;border-radius:50%;border:1.5px solid #5a6390;flex:none}
+.kits button.live i{background:var(--lamp);border-color:var(--lamp)}
+.side .backs{margin-top:auto;padding:18px 0 18px;display:flex;gap:10px;flex-wrap:wrap;position:sticky;bottom:-18px;background:#1e2030}
+.btn{padding:8px 13px;border:2px solid #3b4261;border-radius:4px;font-size:14px;color:var(--fg)}
+.btn:hover{border-color:var(--fg3)}
+.btn kbd{font-family:var(--mono);font-size:12px;color:var(--fg3);margin-left:8px;padding:1px 5px;border:1px solid #3b4261;border-radius:3px}
+
+.tl{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.tlh{display:flex;align-items:center;gap:14px;padding:18px 34px 14px;border-bottom:2px solid #24273a}
+.tlh h2{font-size:18px;font-weight:700;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tlh .c{font-size:13px;color:var(--fg3);white-space:nowrap}
+.tlh .tg{margin-left:auto;display:flex;gap:4px;padding:3px;border:1px solid #33395a;border-radius:6px;flex:none}
+.tlh .tg button{padding:5px 11px;font-size:13px;color:var(--fg3);border-radius:4px;white-space:nowrap}
+.tlh .tg button.on{background:#2b2f47;color:var(--fg)}
+.wbar{display:none;padding:9px 34px;background:#3a2330;color:#ffd0d8;font-size:14px;font-weight:700;border-bottom:2px solid #5a2f3e}
+.wbar.show{display:block}
+.list{flex:1;overflow-y:auto;padding:16px 34px 60px;scrollbar-width:thin;scrollbar-color:#3b4261 transparent}
+.list.talk .ev.tools,.list.talk .ev.think,.list.talk .ev.sysl{display:none}
+.list.nometa .ev.opt{display:none}
+.list .hint{padding:60px 0;text-align:center;color:var(--fg3);font-size:14px}
+.skip{margin:0 0 10px 68px}
+.skip button{font-size:13px;color:var(--fg2);border:1px dashed #3e4567;border-radius:4px;padding:5px 12px}
+.skip button:hover{color:var(--fg);border-color:var(--fg3)}
+#follow{position:absolute;right:30px;bottom:18px;display:none;padding:7px 14px;background:#2b2f47;border:1px solid #454c70;border-radius:999px;font-size:13px;color:var(--fg)}
+#follow.show{display:block}
+
+.ev{position:relative;display:grid;grid-template-columns:54px minmax(0,1fr);column-gap:14px;margin:14px 0;max-width:940px}
+.ev .t{font-family:var(--mono);font-size:12px;color:#8a93bd;padding-top:4px;text-align:right}
+.ev.tools,.ev.think,.ev.sysl{margin:6px 0}
+.ev.tools .t,.ev.think .t{padding-top:5px}
+.raw{position:absolute;right:-30px;top:2px;font-family:var(--mono);font-size:12px;color:#7f8ab8;padding:0 4px;opacity:0}
+.ev:hover>.raw{opacity:1}
+.raw:hover{color:var(--fg)}
+.lnk{font-size:13px;color:#8fb0f0;text-decoration:underline;text-underline-offset:3px;margin-right:12px}
+.lnk:hover{color:var(--fg)}
+
+/* Claude 的回复：正文最亮、最大 */
+.reply .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--lamp);font-weight:700;margin-bottom:4px}
+.md{font-size:15.5px;line-height:1.78;color:#dde2f7;word-break:break-word}
+.md p{margin:0 0 .55em}
+.md strong{color:#f4e6c6;font-weight:700}
+.md code{font-family:var(--mono);font-size:13.5px;background:#262a3e;padding:1px 5px;border-radius:3px;color:#c0caf5}
+.md pre{font:13px/1.55 var(--mono);background:#15161f;border:1px solid #2a2e44;padding:9px 12px;border-radius:4px;overflow-x:auto;margin:.3em 0 .7em;color:var(--fg2)}
+.md h4{font-size:15.5px;color:#f4e6c6;margin:.3em 0 .3em}
+.md ul,.md ol{margin:0 0 .6em 1.3em}
+.md li{margin:.15em 0}
+.md li::marker{color:#6d7aa8}
+.md table{border-collapse:collapse;margin:.3em 0 .8em;font-size:14px;line-height:1.5;display:block;overflow-x:auto}
+.md th,.md td{border:1px solid #33395a;padding:5px 10px;text-align:left;vertical-align:top}
+.md th{background:#232639;color:var(--fg);font-weight:700}
+
+/* 来信：用户 / 队友的话 —— 暖色调暗卡，清楚但不压过回复 */
+.letter{position:relative;max-width:780px;background:#27241f;border:1px solid #4a4233;border-radius:5px;padding:11px 16px 12px}
+.letter.me{background:#262333;border-color:#46405e}
+.letter .hd{display:flex;align-items:center;gap:9px;font-size:13px;color:#c9b48a;margin-bottom:4px}
+.letter.me .hd{color:#b9b0dd}
+.letter .stamp{width:12px;height:14px;border-radius:2px;flex:none}
+.letter .hd b{color:#f0dfb8;font-size:14px}
+.letter.me .hd b{color:#e2dcf7}
+.letter .sum{font-size:15px;font-weight:700;color:#f3e7cc;margin-bottom:3px;line-height:1.5}
+.letter .md{font-size:14.5px;line-height:1.72;color:#ddd4c2}
+.letter.me .md{color:#dcd8ee}
+.letter .md strong{color:#f6e9cc}
+.letter .md code{background:#3a342a;color:#f0e2c4}
+.letter .bodyw{position:relative;max-height:7.2em;overflow:hidden}
+.letter.full .bodyw{max-height:none}
+.letter .bodyw.fade::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2.4em;background:linear-gradient(transparent,#27241f)}
+.letter.me .bodyw.fade::after{background:linear-gradient(transparent,#262333)}
+.letter.full .bodyw::after{display:none}
+.letter .ft{margin-top:5px}
+.letter .lnk{color:#d8bd85}
+
+/* 工具：小胶囊 */
+.caps{display:flex;flex-wrap:wrap;gap:6px}
+.cap{display:inline-flex;align-items:center;gap:7px;max-width:440px;padding:4px 11px 4px 9px;border:1px solid #33395a;background:#21233a;border-radius:999px;font-size:13px;color:var(--fg2);white-space:nowrap}
+.cap>span{overflow:hidden;text-overflow:ellipsis}
+.cap .n{font-family:var(--mono);font-size:12.5px;color:#b4bce0;flex:none}
+.cap .ok{width:7px;height:7px;border-radius:50%;background:#9ece6a;flex:none}
+.cap .ok.err{background:var(--red)}
+.cap .ok.run{background:transparent;border:1.5px solid var(--lamp);animation:tw 1.8s ease-in-out infinite}
+.cap .ok.wait{background:var(--red);animation:tw 1.6s ease-in-out infinite}
+.cap .stx{font-size:12px;color:var(--lamp);flex:none}
+.cap .stx.w{color:var(--red)}
+.cap:hover,.cap.on{border-color:#565f89;color:var(--fg)}
+.cap.err{border-color:#6b3a4a}
+.capd{margin-top:8px;border:1px solid #2a2e44;border-radius:4px;background:#15161f;max-width:900px}
+.capd .sec{padding:8px 12px}
+.capd .sec+.sec{border-top:1px dashed #2a2e44}
+.capd .cl{font-size:12.5px;color:var(--fg3);margin-bottom:4px}
+.capd pre{font:12.5px/1.6 var(--mono);color:var(--fg2);white-space:pre-wrap;word-break:break-all;max-height:360px;overflow:auto}
+.capd .del{color:#f7768e}.capd .add{color:#9ece6a}
+
+.cap.hid{display:none}
+.cap.thk{padding-left:10px;color:var(--fg3);border-style:dashed}
+.cap.thk .n{color:#7f8ab8;letter-spacing:2px}
+.capd p.thk{font-size:14px;line-height:1.65;color:var(--fg2);font-style:italic;white-space:pre-wrap}
+.capmore{padding:4px 12px;border:1px dashed #3e4567;border-radius:999px;font-size:13px;color:var(--fg3)}
+.capmore:hover{color:var(--fg);border-color:var(--fg3)}
+.tlh h2 .role,.plate .ttl .role{display:inline-block;vertical-align:2px;margin-right:6px;padding:0 5px;border-radius:3px;font:12px/1.5 var(--mono)}
+.tlh h2 .role{border:1px solid #3e4567;color:var(--fg2)}
+.plate .ttl .role{background:rgba(31,33,49,.12);color:#3a3f5c;font-weight:400}
+
+/* 思考：默认折叠 */
+.think-b summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg3)}
+.think-b summary::-webkit-details-marker{display:none}
+.think-b summary .dots{font-family:var(--mono);letter-spacing:2px;color:#7f8ab8}
+.think-b[open] summary{color:var(--fg2)}
+.think-b p{margin-top:6px;font-size:14px;line-height:1.65;color:var(--fg2);font-style:italic;max-width:780px;white-space:pre-wrap}
+.note{border:1.5px dashed #3e4567;border-radius:4px;padding:9px 14px;background:#1f2133;max-width:780px}
+.note .lb{font-size:12.5px;color:var(--fg3);margin-bottom:3px}
+.note p{font-size:14.5px;line-height:1.7;color:var(--fg)}
+.note pre{font:12.5px/1.55 var(--mono);color:var(--fg2);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}
+.sysl .s{font-size:12.5px;color:#8a93bd;padding-top:3px}
+
+/* 信箱抽屉 / 原文弹窗 */
+.drawer{position:fixed;left:72px;bottom:60px;width:640px;max-height:640px;display:none;flex-direction:column;z-index:6;
+  background:#1c1e2c;border:10px solid var(--frame);border-radius:6px;box-shadow:inset 0 0 0 2px #2c3150,0 30px 80px rgba(0,0,0,.45)}
+.drawer.open{display:flex}
+.drawer .dh{display:flex;align-items:baseline;gap:12px;padding:16px 22px 12px;border-bottom:2px solid #262a3e}
+.drawer .dh h2{font-size:17px}
+.drawer .dh span{font-size:13px;color:var(--fg3)}
+.drawer .dh button{margin-left:auto;font-size:13px;color:var(--fg3)}
+.drawer ul{list-style:none;overflow-y:auto;padding:6px 10px 12px;scrollbar-width:thin;scrollbar-color:#3b4261 transparent}
+.drawer li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:9px 12px;border-bottom:1px solid #24273a;cursor:pointer;border-radius:3px}
+.drawer li:hover{background:#24273a}
+.drawer li .tt{font-size:14px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drawer li .role{display:inline-block;margin-right:8px;padding:0 6px;border:1px solid #3e4567;border-radius:3px;font-size:12px;color:var(--fg2);font-family:var(--mono)}
+.drawer li .ag{font-size:13px;color:var(--fg3);text-align:right;white-space:nowrap}
+.drawer li .cw{grid-column:1/-1;font-size:12.5px;color:#8a93bd;font-family:var(--mono)}
+.drawer li .none,.drawer .emp{color:var(--fg3)}
+.drawer .emp{padding:30px;text-align:center;font-size:14px}
+#modal{position:fixed;inset:0;z-index:9;background:rgba(8,9,15,.7);display:none;align-items:center;justify-content:center}
+#modal.show{display:flex}
+#modal .box{width:min(1100px,92vw);height:84vh;display:grid;grid-template-rows:auto 1fr;background:#16161e;border:10px solid var(--frame);border-radius:6px;box-shadow:inset 0 0 0 2px #2c3150}
+#modal .bar{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid #2a2e44;font-size:13px;color:var(--fg3)}
+#modal .bar span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modal pre{padding:14px 16px;overflow:auto;font:12.5px/1.55 var(--mono);color:var(--fg2);white-space:pre-wrap;word-break:break-all}
+</style>
+</head>
+<body>
+<div id="scene">
+  <div class="stars" id="stars"></div>
+  <svg class="moon" viewBox="0 0 120 120" aria-hidden="true">
+    <circle cx="60" cy="60" r="52" fill="#c8d3f5" opacity=".03"/><circle cx="60" cy="60" r="40" fill="#c8d3f5" opacity=".04"/>
+    <mask id="mm"><rect width="120" height="120" fill="#fff"/><circle cx="74" cy="50" r="27" fill="#000"/></mask>
+    <circle cx="60" cy="60" r="28" fill="var(--moon)" mask="url(#mm)"/>
+  </svg>
+  <div class="status">
+    <div class="hl" id="hl">正在敲门…</div>
+    <div class="sub" id="sub"></div>
+    <div class="conn" id="conn"></div>
+    <div class="tools"><button id="bSound" title="会话干完了、或停下来等你时响一声（浏览器要求先点一下页面才能出声）">提醒音：关</button></div>
+  </div>
+  <svg class="skyline" viewBox="0 0 1440 360" preserveAspectRatio="none" height="360" aria-hidden="true">
+    <path fill="var(--far)" d="M0 200 H60 V150 H120 V180 H170 V120 H230 V170 H300 V210 H340 V140 H360 V130 H400 V190 H1040 V160 H1090 V110 H1150 V150 H1190 V90 H1210 V80 H1240 V130 H1290 V170 H1340 V140 H1400 V180 H1440 V360 H0Z"/>
+    <path fill="var(--near)" d="M0 260 H40 V230 H110 V250 H150 V200 H210 V240 H260 V270 H1180 V230 H1230 V190 H1290 V220 H1330 V250 H1380 V215 H1440 V360 H0Z"/>
+  </svg>
+  <div class="building" id="bld">
+    <div class="roof">
+      <svg class="antenna" viewBox="0 0 40 74" aria-hidden="true"><g stroke="#3a3f5b" stroke-width="3" stroke-linecap="round"><path d="M20 74 V8"/><path d="M6 20 H34"/><path d="M10 34 H30"/><path d="M13 47 H27"/></g></svg>
+      <div class="roofc" id="roofc"><span class="bub" id="roofbub"></span></div>
+      <svg class="tank" viewBox="0 0 86 70" aria-hidden="true">
+        <rect x="14" y="44" width="5" height="26" fill="#2c3047"/><rect x="67" y="44" width="5" height="26" fill="#2c3047"/>
+        <rect x="8" y="8" width="70" height="40" rx="6" fill="#323750"/><rect x="8" y="18" width="70" height="3" fill="#2a2e44"/><rect x="8" y="34" width="70" height="3" fill="#2a2e44"/>
+        <rect x="20" y="2" width="46" height="8" rx="4" fill="#2c3047"/>
+      </svg>
+      <div class="parapet"></div>
+    </div>
+    <div class="body" id="floors"></div>
+    <div class="ground">
+      <button class="mail" id="mail" title="最近 24 小时已结束的会话">
+        <div class="lb"><b>信箱</b><span id="mailc">最近结束 0 封</span></div>
+        <div class="slots" id="slots"></div>
+      </button>
+      <div class="entry">
+        <div class="sign">ccmon 公寓</div>
+        <div class="canopy"></div><div class="lampc"></div>
+        <div class="door"><i></i><i></i></div>
+        <div class="step"></div>
+      </div>
+      <svg class="bike" viewBox="0 0 150 84" aria-hidden="true">
+        <g fill="none" stroke="#3d4462" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="32" cy="58" r="22"/><circle cx="116" cy="58" r="22"/>
+          <path d="M32 58 L58 30 H100 L116 58 M58 30 L74 58 L100 30 M74 58 H32"/>
+          <path d="M54 22 H68 M58 30 L55 22"/><path d="M100 30 L96 16 H108"/>
+        </g>
+        <rect x="88" y="26" width="26" height="12" rx="2" fill="#343a56"/>
+      </svg>
+    </div>
+  </div>
+</div>
+<div class="street"></div>
+<nav class="signpost" aria-label="切换主题">
+  <a href="/cats" data-theme="cats">宿舍</a>
+  <a href="/farm" data-theme="farm">农场</a>
+  <span class="here">这里：夜景公寓</span>
+</nav>
+
+<div id="scrim"></div>
+<nav class="crumbs" id="crumbs"><a href="/" id="cHome" title="回楼下"><b>ccmon</b></a><span>/</span><a href="/night" id="cTheme" title="回楼下">夜景公寓</a><span>/</span><span class="here" id="cHere">台式机上的 Claude 会话 · 只读</span></nav>
+<section class="panel" id="panel" aria-label="会话详情">
+  <aside class="side in" id="side"></aside>
+  <div class="tl in">
+    <div class="tlh">
+      <h2 id="tlTitle">屋里最近的动静</h2><span class="c" id="tlc"></span>
+      <div class="tg" id="tgMode"><button class="on" data-m="all">全部</button><button data-m="talk">只看对话</button></div>
+      <div class="tg"><button id="bMeta" title="显示注入的上下文、斜杠命令、系统提示等">附件/元数据</button></div>
+    </div>
+    <div class="wbar" id="wbar"></div>
+    <div class="list nometa" id="list"></div>
+    <button id="follow">回到底部，跟着看</button>
+  </div>
+</section>
+<section class="drawer" id="drawer" aria-label="最近已结束">
+  <div class="dh"><h2>信箱 · 最近已结束</h2><span id="drc"></span><button id="drx">收起 Esc</button></div>
+  <ul id="drl"></ul>
+</section>
+<div id="modal"><div class="box"><div class="bar"><span id="mTitle"></span><button class="btn" id="mClose">关闭<kbd>Esc</kbd></button></div><pre id="mBody"></pre></div></div>
+
+<script src="/assets/clawd/clawd.js"></script>
+<script src="/assets/ccmon/alert.js"></script>
+<script>
+"use strict";
+/* ============================================================ 总览：一栋夜里的公寓 */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const LS = localStorage;
+const QS = new URLSearchParams(location.search);
+const DEMO = QS.get("demo") === "1";                       // 仅调试：把会话改写成各种状态
+const DEMO_N = QS.has("n") ? Math.max(0, Math.min(12, +QS.get("n") || 0)) : null;
+const nowS = () => Date.now() / 1000;
+const realSid = sid => String(sid).replace(/-demo\d+$/, "");
+
+const STATE = {
+  busy:    {word: "干活中", cool: false},
+  waiting: {word: "在等你", cool: false},
+  done:    {word: "刚收工", cool: true},
+  idle:    {word: "睡着了", cool: true},
+  dead:    {word: "已退出", cool: true},
+  gone:    {word: "已结束", cool: true},
+};
+const grpOf = it => (STATE[it.group] && it.group !== "gone") ? it.group : "idle";
+const titleOf = it => it.title || it.prompt || it.name || String(it.sid).slice(0, 8);
+// 门牌 / 详情标题：「[developer] …」这类前缀拆成小标签
+function titleHTML(it) { const {role, t} = cleanTitle(it); return (role ? `<span class="role">${esc(role)}</span>` : "") + esc(t); }
+
+const G = {data: null, live: [], units: new Map(), order: null, histSig: null, roof: null, k: 5,
+           floorsN: 1, fail: 0};
+
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(s));
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m";
+  return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0") + "m";
+}
+function fmtAgo(s) {
+  s = Math.max(0, Math.round(s));
+  if (s < 60) return "刚刚";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + " 分钟前";
+  return Math.floor(m / 60) + " 小时 " + (m % 60) + " 分前";
+}
+const hhmmss = d => d.toLocaleTimeString("zh-CN", {hour12: false});
+
+/* ---------- 星星：固定伪随机，纯装饰 ---------- */
+(() => { let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  let h = ""; for (let i = 0; i < 46; i++) { const x = r()*100, y = r()*100, b = r() > .82, tw = r() > .7;
+    if (x < 46 && y < 40) continue;
+    h += `<i class="${b ? "b " : ""}${tw ? "tw" : ""}" style="left:${x}%;top:${y}%;opacity:${(.25 + r()*.5).toFixed(2)};animation-delay:${(-r()*6).toFixed(1)}s"></i>`; }
+  $("#stars").innerHTML = h; })();
+
+/* ---------- 窗里的房间（SVG 只画静物；住户是 Clawd，见下） ---------- */
+let uidN = 0;
+function roomSVG(grp) {
+  const u = "r" + (uidN++);
+  if (grp === "busy" || grp === "waiting") {
+    return `<svg class="room" viewBox="0 0 240 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><linearGradient id="${u}w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3d9a6"/><stop offset="1" stop-color="#e3b575"/></linearGradient></defs>
+    <rect width="240" height="180" fill="url(#${u}w)"/>
+    <rect x="66" y="30" width="28" height="34" rx="2" fill="#c48b52"/><rect x="70" y="34" width="20" height="26" fill="#f1d39d"/>
+    <path d="M70 60 L77 48 L82 54 L85 50 L90 60Z" fill="#a8774a"/>
+    <rect x="170" y="44" width="52" height="4" fill="#a36b3d"/>
+    <rect x="174" y="31" width="6" height="13" fill="#5f7bb8"/><rect x="181" y="34" width="5" height="10" fill="#9a5b46"/><rect x="187" y="29" width="6" height="15" fill="#6f8a52"/>
+    <rect x="205" y="37" width="10" height="7" fill="#b0643f"/><ellipse cx="207" cy="33" rx="4" ry="5" fill="#6f9a4e"/><ellipse cx="214" cy="32" rx="3.5" ry="5.5" fill="#7fae58"/>
+    <rect y="146" width="240" height="34" fill="#b27544"/><rect y="146" width="240" height="2.5" fill="#985f35"/>
+    <ellipse cx="120" cy="165" rx="74" ry="10" fill="#9c5f3a"/>
+    <polygon class="cone" points="38,70 14,150 74,150" fill="#fff7e0" opacity=".5"/>
+    <rect x="36" y="74" width="3" height="78" fill="#3b2f3a"/><ellipse cx="37.5" cy="153" rx="11" ry="3" fill="#3b2f3a"/>
+    <path d="M26 74 L30 56 H45 L49 74Z" fill="#fff1cf"/><path d="M26 74 L30 56 H45 L49 74Z" fill="none" stroke="#d9a466" stroke-width="1.5"/>
+    <rect x="196" y="134" width="24" height="4" rx="1" fill="#6b4630"/><rect x="199" y="138" width="3" height="14" fill="#57382a"/><rect x="214" y="138" width="3" height="14" fill="#57382a"/>
+    <rect x="203" y="123" width="10" height="11" rx="2" fill="#f3ead8"/><path d="M213 126 q5 0 5 3.5 q0 3.5 -5 3.5" stroke="#f3ead8" stroke-width="2" fill="none"/>
+    <path class="steam" d="M207 119 q-3 -4 0 -7 q3 -3 0 -7" stroke="#fff7e0" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <rect x="0" y="0" width="13" height="180" fill="#cf8a5a"/><rect x="5" y="0" width="2" height="180" fill="#b8744a"/>
+    <rect x="227" y="0" width="13" height="180" fill="#cf8a5a"/><rect x="232" y="0" width="2" height="180" fill="#b8744a"/>
+    </svg>`;
+  }
+  // 灯灭了：月光照进来，地上铺着被褥，窗帘半拉
+  return `<svg class="room" viewBox="0 0 240 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><linearGradient id="${u}w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1f31"/><stop offset="1" stop-color="#222840"/></linearGradient></defs>
+    <rect width="240" height="180" fill="url(#${u}w)"/>
+    <path d="M52 22 H126 L116 96 H40Z" fill="#2b3453"/><path d="M88 22 L80 96 M46 56 H122" stroke="#1d2235" stroke-width="3"/>
+    ${grp === "done" ? '<polygon class="ember" points="38,70 14,150 74,150" fill="#e0af68"/>' : ""}
+    <rect y="146" width="240" height="34" fill="#151827"/>
+    <rect x="36" y="74" width="3" height="78" fill="#2a3050"/><ellipse cx="37.5" cy="153" rx="11" ry="3" fill="#2a3050"/><path d="M26 74 L30 56 H45 L49 74Z" fill="#2e3555"/>
+    <rect x="50" y="158" width="140" height="12" rx="4" fill="#39416a"/><rect x="50" y="165" width="140" height="6" rx="3" fill="#2c3356"/>
+    <ellipse cx="68" cy="158" rx="15" ry="5" fill="#525c86"/>
+    <path d="M182 0 H240 V180 H190 Q184 120 188 60 Q190 25 182 0Z" fill="#2b3150"/>
+    <path d="M202 0 Q206 90 200 180 M222 0 Q226 90 220 180" stroke="#232842" stroke-width="3" fill="none"/>
+    <rect x="0" y="0" width="12" height="180" fill="#2b3150"/>
+    </svg>`;
+}
+
+/* ---------- 住户：Clawd（取景和状态映射在 /assets/clawd/clawd.js） ---------- */
+const MINI = {x: -3, y: 4, w: 18, h: 13};          // 小号 Clawd（小帮手）的取景框
+const ROOF = {x: -3, y: -3, w: 21, h: 20};         // 楼顶那只
+const subLive = a => nowS() - (a.mtime || 0) < 8;
+// 总览只画最近 10 分钟内有动静的小帮手；历史上派过的全部只在详情里列
+const recentSubs = s => (s.subagents || []).filter(a => nowS() - (a.mtime || 0) < 600);
+const kitCount = s => Math.min(3, recentSubs(s).length);
+// 活跃的排在前面，这样「动的那几只」总是看得见
+function kitStates(s) { return recentSubs(s).map(subLive).sort((a, b) => b - a).slice(0, 3); }
+// 干活姿势由 clawd.js 统一分配并记在 localStorage，三个主题里同一个会话是同一种姿势
+const clawdFile = (s, grp) => Clawd.pick({...s, group: grp === "gone" ? "history" : grp}, nowS());
+// 往一个「玻璃」容器里放住户：一只主 Clawd + 最多三只小帮手。k = 每个 Clawd 像素几个屏幕像素
+function populate(glass, s, grp, k) {
+  glass.querySelectorAll(".clawd").forEach(n => n.remove());
+  const main = Clawd.el(clawdFile(s, grp), k);
+  main.classList.add("res");
+  glass.append(main);
+  const st = kitStates(s);
+  for (let i = 0; i < kitCount(s); i++) {
+    const m = Clawd.el(Clawd.F(st[i] ? "mini-crabwalk" : "mini-sleep"), 2, MINI);
+    m.classList.add("mini", "m" + i);
+    glass.append(m);
+  }
+}
+function refreshClawds(glass, s, grp) {
+  Clawd.set(glass.querySelector(".clawd.res"), clawdFile(s, grp));
+  const st = kitStates(s);
+  glass.querySelectorAll(".clawd.mini").forEach((m, i) => Clawd.set(m, Clawd.F(st[i] ? "mini-crabwalk" : "mini-sleep")));
+}
+const avatar = () => `<img class="ava" src="/assets/clawd/clawd-static-base.svg" alt="">`;
+
+/* ---------- 门牌 ---------- */
+function plateInner(s, grp) {
+  const nrun = grp === "gone" ? 0 : (s.subagents || []).filter(subLive).length;
+  const tail = grp === "gone" ? `<b data-ago="${s.mtime || 0}">${fmtAgo(nowS() - (s.mtime || 0))}</b>`
+                              : `<b data-since="${s.since || 0}">${s.since ? fmtDur(nowS() - s.since) : ""}</b>`;
+  return `<div class="st"><i class="bulb"></i>${STATE[grp].word}${tail}</div>
+    <div class="ttl">${titleHTML(s)}</div>
+    <div class="nm">${esc(s.name || s.cwd || "")}${nrun ? `<span class="sub">· ${nrun} 个小帮手在跑</span>` : ""}</div>`;
+}
+
+/* ---------- 一扇窗 = 一个会话。只改变化的那扇 ---------- */
+function makeUnit(s) {
+  const el = document.createElement("button");
+  el.className = "unit";
+  el.dataset.sid = s.sid;
+  el.innerHTML = `<div class="win"><div class="glass"></div><div class="transom"></div><div class="sw"></div>
+    <span class="zz"><span>z</span><span>z</span><span>Z</span></span></div><div class="sill"></div><div class="plate"></div>`;
+  el.addEventListener("click", () => openDetail(s.sid, null, true));
+  const rec = {el, grp: null, scene: null, nk: -1, k: 0, plate: ""};
+  G.units.set(s.sid, rec);
+  return rec;
+}
+function updateUnit(rec, s) {
+  const grp = grpOf(s), nk = kitCount(s), glass = rec.el.querySelector(".glass");
+  const scene = STATE[grp].cool ? (grp === "done" ? "done" : "dark") : "lit";
+  if (scene !== rec.scene) {                   // 灯的状态变了才换房间；busy ↔ waiting 只换 Clawd 的姿势
+    const litWas = rec.scene === "lit", first = rec.scene == null;
+    glass.innerHTML = roomSVG(grp);
+    rec.scene = scene; rec.nk = -1;
+    if (!first && litWas !== (scene === "lit")) {   // 开灯 / 关灯：只闪这一扇
+      const sw = rec.el.querySelector(".sw");
+      sw.className = "sw"; void sw.offsetWidth; sw.className = "sw " + (scene === "lit" ? "on" : "off");
+    }
+  }
+  if (grp !== rec.grp) { rec.el.className = `unit s-${grp}${STATE[grp].cool ? " cool" : ""}`; rec.grp = grp; }
+  if (nk !== rec.nk || G.k !== rec.k) { populate(glass, s, grp, G.k); rec.nk = nk; rec.k = G.k; }
+  else refreshClawds(glass, s, grp);
+  const p = plateInner(s, grp).replace(/<b data-since[^]*?<\/b>/, "");   // 时长单独每秒更新，不参与比较
+  if (p !== rec.plate) { rec.plate = p; rec.el.querySelector(".plate").innerHTML = plateInner(s, grp); }
+  rec.el.setAttribute("aria-label", `${titleOf(s)} · ${STATE[grp].word}`);
+  rec.s = s;
+}
+
+/* ---------- 盖楼：按会话数分层；窗户顺序按 pid 固定 ---------- */
+function layout(list) {
+  const N = list.length, scene = $("#scene"), bld = $("#bld");
+  const cols = N <= 3 ? Math.max(N, 1) : (N === 4 ? 2 : 3);
+  const floorsN = Math.max(1, Math.ceil(N / cols));
+  G.floorsN = floorsN;
+  document.body.classList.toggle("tall", floorsN > 1);
+  scene.classList.toggle("scroll", floorsN > 2);
+  bld.style.transform = "";
+  bld.style.setProperty("--cols", cols);
+  bld.style.setProperty("--ww", floorsN > 1 ? "262px" : "286px");
+  bld.style.setProperty("--wh", floorsN > 1 ? "166px" : "204px");
+  bld.style.setProperty("--gap", cols === 1 ? "0px" : floorsN > 1 ? "52px" : "64px");
+  $("#roofc").style.left = cols < 3 ? "110px" : "200px";
+  const box = $("#floors");
+  box.querySelectorAll(".ac").forEach(a => a.remove());
+  const frag = document.createDocumentFragment();
+  if (!N) {
+    const f = document.createElement("div"); f.className = "floor";
+    f.innerHTML = `<div class="vacant"><div class="w"></div><p>今晚没人在家——台式机上没有在跑的 Claude</p></div>`;
+    frag.append(f);
+  }
+  for (let fl = 0; fl < (N ? floorsN : 0); fl++) {
+    const f = document.createElement("div"); f.className = "floor";
+    for (let c = 0; c < cols; c++) {
+      const i = fl * cols + c;
+      if (i >= N) { f.append(document.createElement("div")); continue; }
+      const rec = G.units.get(list[i].sid);
+      if (c < cols - 1 && (i % 2 === 1 || cols === 2)) { const ac = document.createElement("span"); ac.className = "ac"; rec.el.append(ac); }
+      f.append(rec.el);
+    }
+    frag.append(f);
+  }
+  box.replaceChildren(frag);
+  // 一两层时，楼太高就整体缩一点，别挡住天空里的状态句
+  if (floorsN <= 2) requestAnimationFrame(() => {
+    const top = bld.getBoundingClientRect().top, lim = floorsN > 1 ? 16 : 150;
+    if (top < lim) { const sc = Math.max(.8, (innerHeight - 46 - lim) / bld.offsetHeight);
+      bld.style.transformOrigin = floorsN > 1 ? "100% 100%" : "50% 100%";
+      bld.style.transform = (floorsN > 1 ? "" : "translateX(-50%) ") + `scale(${sc.toFixed(3)})`; }
+  });
+}
+
+/* ---------- 天空里的一句话 + 楼顶的 Clawd ---------- */
+function renderSky(list) {
+  const cnt = k => list.filter(x => grpOf(x) === k).length;
+  const P = [];
+  const pt = (n, cls, w) => `<span class="pt"><b class="${cls}">${n}</b> ${w}</span>`;
+  if (cnt("waiting")) P.push(pt(cnt("waiting"), "wt", "户在敲窗等你"));
+  if (cnt("busy")) P.push(pt(cnt("busy"), "lit", "盏灯亮着"));
+  if (cnt("done")) P.push(pt(cnt("done"), "sl", "户刚熄灯"));
+  if (cnt("idle")) P.push(pt(cnt("idle"), "sl", "户睡了"));
+  if (cnt("dead")) P.push(pt(cnt("dead"), "sl", "户搬走了"));
+  const hl = P.length ? P.join('<span class="sep">·</span>') : "整栋楼都熄灯了";
+  if ($("#hl").innerHTML !== hl) $("#hl").innerHTML = hl;
+  $("#sub").innerHTML = `台式机上的 ${list.length} 个 Claude · 更新于 <span class="m">${hhmmss(new Date())}</span>${DEMO ? " · 调试演示" : ""}`;
+
+  const w = cnt("waiting"), b = cnt("busy");
+  const mode = w ? "alert" : b ? "awake" : list.length ? "sleep" : "empty";
+  const file = Clawd.F(mode === "alert" ? "notification" : mode === "awake" ? "idle-follow" : "sleeping");
+  const box = $("#roofc");
+  if (!G.roof) { G.roof = Clawd.el(file, 3, ROOF); box.prepend(G.roof); } else Clawd.set(G.roof, file);
+  box.className = "roofc " + mode;
+  const bub = w ? `${w} 户在等你，点我` : "";
+  if ($("#roofbub").textContent !== bub) $("#roofbub").textContent = bub;
+  G.firstWaiting = (list.find(x => grpOf(x) === "waiting") || {}).sid || null;
+}
+
+$("#roofc").addEventListener("click", () => { if (G.firstWaiting) openDetail(G.firstWaiting, null, true); });
+
+/* ---------- 信箱 ---------- */
+function cleanTitle(h) {
+  let t = String(h.title || h.prompt || "").trim(), role = "";
+  const m = t.match(/^\[([\w-]+)\]\s*([\s\S]*)$/); if (m) { role = m[1]; t = m[2]; }
+  t = t.split(/。|\s##\s/)[0].trim();
+  return {role, t: t || h.name || String(h.sid || "").slice(0, 8)};
+}
+function renderMail(H) {
+  const sig = H.map(h => h.sid + (h.title || "")).join("|");
+  if (sig === G.histSig) return;
+  G.histSig = sig;
+  $("#mailc").textContent = `最近结束 ${H.length} 封`;
+  let sl = "";
+  for (let i = 0; i < 14; i++) { const h = H[i];
+    sl += h ? `<span class="slot${nowS() - h.mtime > 3600 ? " old" : ""}" title="${esc(cleanTitle(h).t)}"><i></i></span>` : `<span class="slot empty"></span>`; }
+  $("#slots").innerHTML = sl;
+  $("#drc").textContent = `${H.length} 个会话 · 24 小时内`;
+  $("#drl").innerHTML = H.length ? H.map(h => { const {role, t} = cleanTitle(h);
+    return `<li data-sid="${esc(h.sid)}"><div class="tt">${role ? `<span class="role">${esc(role)}</span>` : ""}${esc(t)}</div>
+      <div class="ag" data-ago="${h.mtime}">${fmtAgo(nowS() - h.mtime)}</div><div class="cw">${esc(h.cwd)}</div></li>`; }).join("")
+    : `<li class="emp">信箱是空的</li>`;
+}
+$("#mail").onclick = () => { $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); };
+$("#drl").addEventListener("click", e => { const li = e.target.closest("li[data-sid]"); if (!li) return;
+  $("#drawer").classList.remove("open"); openDetail(li.dataset.sid, null, false); });
+
+/* ---------- 提醒：标签页标题由这里写；提示音和标签页小图标交给共用的 /assets/ccmon/alert.js ---------- */
+function alertWaiting(list) {
+  const n = list.filter(x => grpOf(x) === "waiting").length;
+  document.title = n ? `▲ ${n} 个等你处理 · 夜景公寓` : "Claude 监控 · 夜景公寓";
+}
+function paintSound() {
+  const on = CCAlert.soundOn();
+  $("#bSound").textContent = on ? "提醒音：开" : "提醒音：关";
+  $("#bSound").classList.toggle("on", on);
+}
+$("#bSound").onclick = () => { CCAlert.setSound(!CCAlert.soundOn()); paintSound(); };
+paintSound();
+// 那扇窗冒一个很轻的小气泡，几秒后自己消失
+function popAt(sid, text, kind) {
+  const rec = G.units.get(sid); if (!rec) return;
+  rec.el.querySelector(".pop")?.remove();
+  const b = document.createElement("span");
+  b.className = "pop " + kind; b.textContent = text;
+  rec.el.querySelector(".win").append(b);
+  setTimeout(() => b.remove(), 6000);
+}
+function onAlerts(evs) {
+  for (const e of evs || []) {
+    if (e.type === "wait") popAt(e.sid, "喊你了", "w");
+    else if (e.type === "done" && !e.quiet) popAt(e.sid, `干完啦 · 忙了 ${fmtDur(e.ranSec)}`, "d");
+  }
+}
+
+/* ---------- 主题切换：街角路牌 ---------- */
+document.querySelectorAll(".signpost a").forEach(a => a.addEventListener("click", e => {
+  e.preventDefault(); LS.ccmonTheme = a.dataset.theme; location.href = "/" + a.dataset.theme + location.hash;
+}));
+
+/* ---------- 仅调试：?demo=1[&n=0..12] 把真实会话改写成各种状态 ---------- */
+function demoize(d) {
+  const base = d.groups.flatMap(g => g.items);
+  let items = base.map(x => ({...x}));
+  if (DEMO_N != null) { items = [];
+    for (let i = 0; i < DEMO_N && base.length; i++) { const b = base[i % base.length];
+      items.push({...b, sid: i < base.length ? b.sid : b.sid + "-demo" + i, pid: (b.pid || 0) + i * 100000}); } }
+  const cyc = ["waiting", "busy", "done", "idle", "dead", "busy"], t = nowS();
+  items.forEach((x, i) => { x.group = cyc[i % cyc.length]; x.since = t - (i + 1) * 437;
+    x.subagents = (x.subagents || []).map((a, k) => ({...a, mtime: k === 0 && x.group === "busy" ? t : a.mtime})); });
+  const groups = ["waiting", "busy", "done", "idle", "dead"].map(k => ({key: k, items: items.filter(x => x.group === k)}));
+  return {...d, groups};
+}
+
+/* ---------- 轮询 ---------- */
+function applyData(d) {
+  G.data = d;
+  const list = d.groups.flatMap(g => g.items.map(x => ({...x, group: x.group || g.key})))
+    .sort((a, b) => ((a.pid ?? 1e12) - (b.pid ?? 1e12)) || String(a.sid).localeCompare(String(b.sid)));
+  G.live = list;
+  G.k = list.length > 3 ? 4 : 5;                 // 两层以上窗小一号，Clawd 也小一号（整数倍才锐利）
+  for (const s of list) updateUnit(G.units.get(s.sid) || makeUnit(s), s);
+  const order = list.map(s => s.sid).join();
+  if (order !== G.order) {
+    for (const [sid] of G.units) if (!list.some(s => s.sid === sid)) G.units.delete(sid);
+    G.order = order;
+    layout(list);
+  }
+  renderSky(list);
+  renderMail(d.history || []);
+  alertWaiting(list);
+  if (typeof onSessions === "function") onSessions();
+}
+async function poll() {
+  const conn = $("#conn");
+  try {
+    const r = await fetch("/api/sessions", {cache: "no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    let d = await r.json();
+    const evs = CCAlert.observe(d);          // 传原始返回，不传 demo 改写过的
+    if (DEMO) d = demoize(d);
+    applyData(d);
+    onAlerts(evs);
+    G.fail = 0;
+    if (d.err) { conn.textContent = "台式机那边读状态出了点问题：" + d.err; conn.classList.add("show"); }
+    else conn.classList.remove("show");
+  } catch (e) {
+    // 偶尔一次超时不吭声，连着两次（约 3 秒）拿不到才提示
+    if (++G.fail >= 2) { conn.textContent = "暂时连不上台式机，正在重试…（" + (e.message || e) + "）"; conn.classList.add("show"); }
+  }
+  setTimeout(poll, 1500);
+}
+
+/* ---------- 每秒：时长、住户姿势（闲久了会从打哈欠变成睡死）、信箱时间 ---------- */
+setInterval(() => {
+  const t = nowS();
+  document.querySelectorAll("[data-since]").forEach(b => { const s = +b.dataset.since; if (s) b.textContent = fmtDur(t - s); });
+  document.querySelectorAll("[data-ago]").forEach(b => { b.textContent = fmtAgo(t - +b.dataset.ago); });
+  for (const [, rec] of G.units) if (rec.s) updateUnit(rec, rec.s);
+  if (typeof onTick === "function") onTick();
+}, 1000);
+</script>
+<script>
+"use strict";
+/* ============================================================ 详情：推进到那扇窗 */
+const D = {sid: null, agent: null, all: false, es: null, tools: {}, lastRow: null, follow: true, n: 0, title: "", sideSig: ""};
+const panel = $("#panel"), scrim = $("#scrim"), scene = $("#scene"), list = $("#list");
+const hhmm = ts => { if (!ts) return ""; const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false}); };
+const noAnsi = s => String(s ?? "").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+const cleanFile = f => String(f || "").split(/\\n|\n/)[0].trim();
+const el = html => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; };
+
+function findSession(sid) {
+  const live = G.live.find(x => x.sid === sid);
+  if (live) return {s: live, grp: grpOf(live)};
+  const h = ((G.data && G.data.history) || []).find(x => x.sid === sid);
+  return h ? {s: h, grp: "gone"} : null;
+}
+
+/* ---------- 迷你 markdown：围栏代码、表格、列表、标题、粗体、行内代码 ---------- */
+function inl(s) { return esc(s).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>"); }
+function md(src) {
+  const L = String(src ?? "").split("\n"); let o = "", i = 0;
+  while (i < L.length) {
+    const l = L[i];
+    if (/^\s*```/.test(l)) { const c = []; i++; while (i < L.length && !/^\s*```/.test(L[i])) c.push(L[i++]); i++;
+      o += `<pre>${esc(c.join("\n"))}</pre>`; continue; }
+    if (/^\s*\|/.test(l)) { const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) rows.push(L[i++]);
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const body = rows.filter(r => !/^\s*\|?\s*:?-{2,}/.test(r));
+      o += "<table>" + body.map((r, k) => "<tr>" + cells(r).map(c => k ? `<td>${inl(c)}</td>` : `<th>${inl(c)}</th>`).join("") + "</tr>").join("") + "</table>"; continue; }
+    if (/^#{1,6}\s/.test(l)) { o += `<h4>${inl(l.replace(/^#+\s*/, ""))}</h4>`; i++; continue; }
+    if (/^\s*[-*•]\s+/.test(l)) { o += "<ul>"; while (i < L.length && /^\s*[-*•]\s+/.test(L[i])) o += "<li>" + inl(L[i++].replace(/^\s*[-*•]\s+/, "")) + "</li>"; o += "</ul>"; continue; }
+    if (/^\s*\d+[.)]\s+/.test(l)) { o += "<ol>"; while (i < L.length && /^\s*\d+[.)]\s+/.test(L[i])) o += "<li>" + inl(L[i++].replace(/^\s*\d+[.)]\s+/, "")) + "</li>"; o += "</ol>"; continue; }
+    if (!l.trim()) { i++; continue; }
+    const p = [L[i++]];   // 至少吃掉一行，任何没认出来的写法都不会卡死
+    while (i < L.length && L[i].trim() && !/^\s*(\||```|#{1,6}\s|[-*•]\s|\d+[.)]\s)/.test(L[i])) p.push(L[i++]);
+    o += "<p>" + p.map(inl).join("<br>") + "</p>";
+  }
+  return o;
+}
+
+/* ---------- 来信：解析队友消息 ---------- */
+const STAMP = {orange: "#ff9e64", pink: "#f7768e", yellow: "#e0af68", blue: "#7aa2f7", green: "#9ece6a", red: "#f7768e", purple: "#bb9af7", cyan: "#7dcfff"};
+function parsePrompt(t) {
+  t = String(t ?? "");
+  const m = t.match(/<teammate-message\s+([^>]*)>\n?([\s\S]*)/);
+  if (!m) return {me: true, from: "你", sum: "", body: t.replace(/^Another Claude session sent a message:\s*/, "")};
+  const attr = k => (m[1].match(new RegExp(k + '="([^"]*)"')) || [])[1];
+  let body = m[2].split("</teammate-message>")[0].trim(), sum = attr("summary") || "";
+  if (/^\{"type":"idle_notification"/.test(body)) {
+    const r = body.match(/"result":"((?:[^"\\]|\\.)*)/);
+    body = r ? r[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\") : "";
+    sum = sum || "干完了，在待命";
+  }
+  return {me: false, from: attr("teammate_id") || "队友", sum, body, color: STAMP[attr("color")] || "#9aa5ce"};
+}
+
+/* ---------- 工具胶囊 ---------- */
+const base = p => String(p || "").split("/").pop();
+function capLabel(name, x) {
+  x = x || {};
+  if (name === "SendMessage") return ["寄信", `→ ${x.to || x.recipient || ""}${x.summary ? " · " + x.summary : ""}`];
+  if (/^(Edit|Write|Read|MultiEdit|NotebookEdit)$/.test(name)) return [name, base(x.file_path || x.notebook_path)];
+  if (name === "Bash") return ["Bash", x.description || String(x.command || "").slice(0, 60)];
+  if (name === "Agent" || name === "Task") return ["派小帮手", `[${x.subagent_type || "agent"}] ${x.description || ""}`];
+  if (name === "TodoWrite" && Array.isArray(x.todos)) return ["待办", `${x.todos.filter(t => t.status === "completed").length}/${x.todos.length} 完成`];
+  for (const k of ["pattern", "query", "url", "skill", "description", "path", "prompt"]) if (typeof x[k] === "string") return [name, x[k].slice(0, 60)];
+  return [name, ""];
+}
+function inputHtml(name, inp) {
+  if (inp && (name === "Edit" || name === "MultiEdit")) {
+    const edits = name === "MultiEdit" ? (inp.edits || []) : [inp];
+    return `<div class="cl">${esc(inp.file_path)}${inp.replace_all ? "（全部替换）" : ""}</div><pre>` + edits.map(e =>
+      String(e.old_string ?? "").split("\n").map(l => `<span class="del">- ${esc(l)}</span>`).join("\n") + "\n" +
+      String(e.new_string ?? "").split("\n").map(l => `<span class="add">+ ${esc(l)}</span>`).join("\n")).join("\n⋯\n") + "</pre>";
+  }
+  if (inp && name === "Bash" && typeof inp.command === "string") return `<pre>$ ${esc(inp.command)}</pre>`;
+  if (inp && name === "Write" && typeof inp.content === "string") return `<div class="cl">${esc(inp.file_path)}</div><pre>${esc(inp.content)}</pre>`;
+  if (inp && name === "TodoWrite" && Array.isArray(inp.todos))
+    return `<pre>${inp.todos.map(t => (t.status === "completed" ? "[x] " : t.status === "in_progress" ? "[>] " : "[ ] ") + esc(t.content)).join("\n")}</pre>`;
+  return `<pre>${esc(JSON.stringify(inp, null, 2))}</pre>`;
+}
+function pendingState() {
+  const f = findSession(D.sid);
+  if (D.agent) return ["run", "进行中"];
+  if (f && f.grp === "waiting") return ["wait", "等你批准"];
+  if (f && f.grp === "busy") return ["run", "进行中"];
+  return ["run", "没有结果"];
+}
+function paintCap(rec) {
+  const dot = rec.cap.querySelector(".ok"), stx = rec.cap.querySelector(".stx");
+  if (!dot || !stx) return;   // 「想了一下」胶囊也放在 D.tools 里，但它没有状态点
+  if (rec.res) { dot.className = "ok" + (rec.res.err ? " err" : ""); stx.textContent = rec.res.err ? "出错" : ""; stx.className = "stx w";
+    rec.cap.classList.toggle("err", !!rec.res.err); return; }
+  const [c, w] = pendingState();
+  dot.className = "ok " + c; stx.textContent = w; stx.className = "stx" + (c === "wait" ? " w" : "");
+}
+function capDetail(rec) {
+  const e = rec.ev, r = rec.res;
+  if (rec.think) return `<div class="capd"><div class="sec"><div class="cl">想了一下 <button class="lnk" data-ln="${e.ln}">原始记录</button>${cutLnk(e)}</div><p class="thk">${esc(String(e.text || "").trim())}</p></div></div>`;
+  const sub = (findSession(D.sid)?.s.subagents || []).find(a => a.toolUseId === e.id);
+  let h = `<div class="sec"><div class="cl">参数 <button class="lnk" data-ln="${e.ln}">原始记录</button>${sub && !D.agent ? `<button class="lnk" data-agent="${esc(sub.id)}">打开这个小帮手的记录</button>` : ""}</div>${inputHtml(e.name, e.input)}</div>`;
+  if (r) {
+    const f = cleanFile(r.file);
+    h += `<div class="sec"><div class="cl">结果${r.err ? "（出错）" : ""} <button class="lnk" data-ln="${r.ln}">原始记录</button>${f ? `<button class="lnk" data-file="${esc(f)}">输出太大已落盘，看完整输出</button>` : ""}${r.cut ? `<button class="lnk" data-ln="${r.ln}">已截断（共 ${r.len} 字），看全文</button>` : ""}</div><pre>${esc(noAnsi(r.text))}</pre></div>`;
+  } else h += `<div class="sec"><div class="cl">${pendingState()[1]}</div></div>`;
+  return `<div class="capd">${h}</div>`;
+}
+
+function ensureRow(t) {
+  let row = D.lastRow;
+  if (!row || !row.isConnected) { row = el(`<div class="ev tools">${t}<div><div class="caps"></div></div></div>`); push(row, false); D.lastRow = row; }
+  return row;
+}
+/* ---------- 长串工具调用：超过 6 个只露前 2 个 +「还有 N 个」+ 最后 3 个 ---------- */
+function foldRow(row) {
+  if (row.dataset.open) return;
+  const box = row.querySelector(".caps"), caps = [...box.querySelectorAll(".cap")];
+  let more = box.querySelector(".capmore");
+  if (caps.length <= 6) { more?.remove(); return; }
+  caps.forEach((c, i) => c.classList.toggle("hid", i >= 2 && i < caps.length - 3));
+  if (!more) { more = document.createElement("button"); more.className = "capmore"; }
+  more.textContent = `… 还有 ${caps.length - 5} 个`;
+  caps[1].after(more);
+}
+
+/* ---------- 渲染一条事件 ---------- */
+const rawBtn = ln => `<button class="raw" data-ln="${ln}" title="看这一行的原始 JSON">{ }</button>`;
+const cutLnk = e => e.cut ? `<button class="lnk" data-ln="${e.ln}">内容过长已截断，看全文</button>` : "";
+function push(node, breaksRun = true) { list.append(node); if (breaksRun) D.lastRow = null; }
+function render(e) {
+  const t = `<span class="t">${hhmm(e.ts)}</span>`;
+  switch (e.k) {
+    case "tool": {
+      const row = ensureRow(t);
+      const [a, b] = capLabel(e.name, e.input);
+      const cap = el(`<button class="cap" data-id="${esc(e.id)}"><i class="ok"></i><span class="n">${esc(a)}</span>${b ? `<span>${esc(b)}</span>` : ""}<i class="stx"></i></button>`);
+      row.querySelector(".caps").append(cap);
+      foldRow(row);
+      const rec = D.tools[e.id] = {cap, ev: e, res: null, row};
+      paintCap(rec);
+      return;
+    }
+    case "result": {
+      const rec = D.tools[e.id];
+      if (!rec) {  // 调用在「更早」那部分没加载
+        const fake = {id: e.id, ln: e.ln, name: "结果", input: {}};
+        render({...fake, k: "tool", ts: e.ts}); D.tools[e.id].res = e; paintCap(D.tools[e.id]); return;
+      }
+      rec.res = e; paintCap(rec);
+      if (rec.cap.classList.contains("on")) { rec.row.querySelector(".capd")?.remove(); rec.row.lastElementChild.insertAdjacentHTML("beforeend", capDetail(rec)); }
+      return;
+    }
+    case "title": if (!D.agent) setTitle(e.text); return;
+    case "text":
+      D.n++;
+      return push(el(`<div class="ev">${rawBtn(e.ln)}${t}<div class="reply"><div class="who">${avatar()}${D.agent ? "小帮手" : "Claude"}</div><div class="md">${md(e.text)}</div>${cutLnk(e)}</div></div>`));
+    case "prompt": {
+      if (/^\s*<task-notification>/.test(e.text || "")) {   // 后台小帮手干完了的回报：不是人说的话，压成一张小纸条
+        const tag = k => ((e.text.match(new RegExp(`<${k}>([\\s\\S]*?)(?:</${k}>|$)`)) || [])[1] || "").trim();
+        const id = tag("task-id"), sub = (findSession(D.sid)?.s.subagents || []).find(a => a.id === id);
+        const res = tag("result").replace(/^\[harness:[^\]]*\]\s*/, "");
+        return push(el(`<div class="ev">${rawBtn(e.ln)}${t}<div class="note"><div class="lb">小帮手回报 · ${esc(tag("status") || "")}</div>
+          <p>${esc(tag("summary") || id)}</p>${res ? `<details class="think-b"><summary><span class="dots">···</span>看它交回来的内容</summary><p style="font-style:normal">${esc(res)}</p></details>` : ""}
+          ${sub && !D.agent ? `<button class="lnk" data-agent="${esc(sub.id)}">打开这个小帮手的记录</button>` : ""}${cutLnk(e)}</div></div>`));
+      }
+      D.n++;
+      const p = parsePrompt(e.text), long = p.body.length > 260 || p.body.split("\n").length > 5;
+      return push(el(`<div class="ev">${rawBtn(e.ln)}${t}<div class="letter${p.me ? " me" : ""}">
+        <div class="hd">${p.me ? "" : `<i class="stamp" style="background:${p.color}"></i>`}<b>${esc(p.from)}</b>${p.me ? "说" : "来信"}</div>
+        ${p.sum ? `<div class="sum">${esc(p.sum)}</div>` : ""}
+        ${p.body ? `<div class="bodyw${long ? " fade" : ""}" ${long ? "" : 'style="max-height:none"'}><div class="md">${md(p.body)}</div></div>` : ""}
+        ${long || e.cut ? `<div class="ft">${long ? '<button class="lnk more">展开全文</button>' : ""}${cutLnk(e)}</div>` : ""}</div></div>`));
+    }
+    case "think": {   // 思考并进同一串胶囊里，压成一颗「···」，点开才看；不再把工具串切成一行一行
+      const row = ensureRow(t), id = "th" + e.ln;
+      const cap = el(`<button class="cap thk" data-id="${id}" title="想了一下（点开看）"><span class="n">···</span><span>想了一下</span></button>`);
+      row.querySelector(".caps").append(cap);
+      D.tools[id] = {cap, ev: e, think: true, row};
+      foldRow(row);
+      return;
+    }
+    case "meta": case "att": {
+      const opt = e.k === "att" || !e.show;
+      return push(el(`<div class="ev${opt ? " opt" : ""}">${rawBtn(e.ln)}${t}<div class="note"><div class="lb">${esc(e.label || e.k)}</div>${e.text ? `<pre>${esc(String(e.text).slice(0, 4000))}</pre>` : ""}${cutLnk(e)}</div></div>`), !opt);
+    }
+    case "sys":
+      if (e.label === "away_summary")
+        return push(el(`<div class="ev">${t}<div class="note"><div class="lb">你离开时的小结</div><p>${esc(String(e.text).replace(/\s*\(disable recaps in \/config\)\s*$/, ""))}</p></div></div>`));
+      return push(el(`<div class="ev sysl">${t}<div class="s">${esc(e.text || e.label)}</div></div>`));
+  }
+}
+function addEvents(evs) {
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 120;
+  for (const e of evs) render(e);
+  if (D.follow && (atBottom || evs.length > 50)) list.scrollTop = list.scrollHeight;
+  $("#tlc").textContent = D.n ? `${D.n} 条对话 · 实时` : "实时";
+}
+function setTitle(t) { if (t) { D.title = t; if (!D.agent) $("#tlTitle").innerHTML = titleHTML({title: t}); } }
+
+/* ---------- SSE ---------- */
+function openStream() {
+  if (D.es) D.es.close();
+  list.innerHTML = `<div class="hint">推门进去…</div>`;
+  panel.classList.add("loading");
+  const qs = new URLSearchParams({sid: realSid(D.sid)});
+  if (D.agent) qs.set("agent", D.agent);
+  if (D.all) qs.set("all", "1");
+  const es = D.es = new EventSource("/api/stream?" + qs);
+  es.addEventListener("init", ev => {
+    const d = JSON.parse(ev.data);
+    list.innerHTML = ""; D.tools = {}; D.lastRow = null; D.n = 0; D.follow = true;
+    if (d.skipped) { const m = el(`<div class="skip"><button>更早还有 ${d.skipped} 条，全部加载</button></div>`);
+      m.querySelector("button").onclick = () => { D.all = true; openStream(); }; push(m); }
+    if (!D.agent) setTitle(d.title);
+    addEvents(d.events);
+    if (!d.events.length) push(el(`<div class="hint">这户还没有动静</div>`));
+    list.scrollTop = list.scrollHeight;
+    requestAnimationFrame(() => panel.classList.remove("loading"));
+  });
+  es.addEventListener("more", ev => addEvents(JSON.parse(ev.data).events));
+  es.addEventListener("reset", () => openStream());
+  es.onerror = () => { $("#tlc").textContent = "实时流断开，自动重连中…"; };
+}
+
+/* ---------- 左侧：放大的那扇窗 + 门牌 + 小帮手 ---------- */
+function renderSide(force) {
+  const f = findSession(D.sid);
+  const s = f ? f.s : {sid: D.sid, name: "", title: "（还没找到这个会话）"};
+  const grp = f ? f.grp : "gone";
+  const subs = s.subagents || [];
+  const sig = [grp, titleOf(s), s.cwd, subs.map(a => a.id).join(), D.agent].join("|");
+  const wb = $("#wbar");
+  wb.classList.toggle("show", grp === "waiting" && !D.agent);
+  wb.textContent = `它停下来等你了（${s.label || "等待"}）—— 回台式机处理一下`;
+  if (!force && sig === D.sideSig) { paintSubs(); return; }
+  const roomGrp = grp === "gone" ? "dead" : grp;
+  D.sideSig = sig;
+  const ag = D.agent && subs.find(a => a.id === D.agent);
+  $("#side").innerHTML = `<div class="rw${STATE[grp].cool ? " dim" : ""}${grp === "gone" ? " gone" : ""}">${roomSVG(roomGrp)}</div>
+    <div class="unit s-${grp}${STATE[grp].cool ? " cool" : ""}"><div class="plate">${plateInner(s, grp)}</div></div>
+    <dl class="meta">
+      <dt>项目</dt><dd class="mono">${esc(s.cwd || "")}</dd>
+      ${s.pid ? `<dt>进程</dt><dd class="mono">pid ${esc(s.pid)}</dd>` : ""}
+      ${subs.length ? `<dt>小帮手</dt><dd class="kits">${subs.map(a => `<button data-agent="${esc(a.id)}" title="${esc(a.desc)}" class="${D.agent === a.id ? "sel" : ""}"><i></i><span>${esc(a.type || "agent")} · ${esc(a.desc || "")}</span></button>`).join("")}</dd>` : ""}
+      ${s.prompt ? `<dt>最后一句</dt><dd class="q">${esc(parsePrompt(s.prompt).sum || parsePrompt(s.prompt).body)}</dd>` : ""}
+    </dl>
+    <div class="backs">${ag ? `<button class="btn" data-agent="">回到主会话</button>` : ""}<button class="btn" id="back">回到楼下<kbd>Esc</kbd></button></div>`;
+  $("#tlTitle").innerHTML = ag ? esc(`小帮手 · ${ag.type || "agent"} · ${ag.desc || ""}`) : (D.title ? titleHTML({title: D.title}) : titleHTML(s));
+  populate($("#side .rw"), s, grp, 6);
+  paintSubs();
+}
+function paintSubs() {
+  const f = findSession(D.sid); if (!f) return;
+  const subs = f.s.subagents || [];
+  document.querySelectorAll("#side .kits button").forEach(b => { const a = subs.find(x => x.id === b.dataset.agent);
+    b.classList.toggle("live", !!a && subLive(a)); });
+  const rw = $("#side .rw");
+  if (rw) { if (rw.querySelectorAll(".clawd.mini").length !== kitCount(f.s)) populate(rw, f.s, f.grp, 6); else refreshClawds(rw, f.s, f.grp); }
+}
+$("#side").addEventListener("click", e => {
+  if (e.target.closest("#back")) return closeAll();
+  const a = e.target.closest("[data-agent]"); if (a) openDetail(D.sid, a.dataset.agent || null, false);
+});
+
+/* ---------- 打开 / 关上 ---------- */
+// 从楼下点进某扇窗时 push 一条历史，浏览器「后退」能回到楼下；窗与窗之间切换只 replace
+function setHash(h, push) {
+  const url = location.pathname + location.search + (h ? "#" + h : "");
+  if (url === location.pathname + location.search + location.hash) return;
+  if (push) history.pushState({ccmon: 1}, "", url); else history.replaceState(history.state, "", url);
+}
+addEventListener("popstate", () => {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (!h) { if (D.sid) closeAll("none"); return; }
+  const [sid, agent] = h.split("/");
+  if (sid !== D.sid || (agent || null) !== D.agent) openDetail(sid, agent || null, false);
+});
+function openDetail(sid, agent, animate) {
+  const same = panel.classList.contains("open") && D.sid === sid && D.agent === agent;
+  const reopen = panel.classList.contains("open");
+  if (D.sid !== sid) D.title = "";
+  D.sid = sid; D.agent = agent; D.all = false;
+  setHash(sid + (agent ? "/" + agent : ""), !reopen);
+  renderCrumbs();
+  renderSide(true);
+  if (!same) openStream();
+  panel.classList.add("open"); scrim.classList.add("open");
+  const w = G.units.get(sid)?.el.querySelector(".win");
+  if (animate && !reopen && w) {
+    const r = w.getBoundingClientRect(), p = panel.getBoundingClientRect();
+    scene.style.transformOrigin = `${r.left + r.width/2}px ${r.top + r.height/2}px`;
+    scene.classList.add("zoomed");
+    panel.classList.add("flying");
+    panel.style.transition = "none"; panel.style.transformOrigin = "0 0";
+    panel.style.transform = `translate(${r.left - p.left}px,${r.top - p.top}px) scale(${r.width/p.width},${r.height/p.height})`;
+    void panel.offsetWidth;
+    panel.style.transition = "transform .6s cubic-bezier(.3,.7,.2,1)";
+    panel.style.transform = "none";
+    setTimeout(() => panel.classList.remove("flying"), 30);
+  } else { scene.style.transformOrigin = ""; scene.classList.add("zoomed"); }
+}
+function closeAll(nav) {
+  if (nav !== "none" && location.hash && history.state && history.state.ccmon) { history.back(); return; }
+  if (D.es) { D.es.close(); D.es = null; }
+  D.sid = null; D.agent = null;
+  panel.classList.remove("open"); scrim.classList.remove("open"); $("#drawer").classList.remove("open");
+  scene.classList.remove("zoomed");
+  if (nav !== "none") setHash("");
+  renderCrumbs();
+}
+scrim.onclick = () => closeAll();
+$("#drx").onclick = () => closeAll();
+
+/* ---------- 原文弹窗 ---------- */
+async function showModal(title, url) {
+  $("#mTitle").textContent = title; $("#mBody").textContent = "加载中…"; $("#modal").classList.add("show");
+  try { const r = await fetch(url); $("#mBody").textContent = noAnsi(await r.text()); }
+  catch (err) { $("#mBody").textContent = "加载失败：" + err.message; }
+}
+$("#mClose").onclick = () => $("#modal").classList.remove("show");
+$("#modal").onclick = e => { if (e.target.id === "modal") $("#modal").classList.remove("show"); };
+addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if ($("#modal").classList.contains("show")) $("#modal").classList.remove("show");
+  else closeAll();
+});
+
+/* ---------- 时间线里的点击 ---------- */
+list.addEventListener("click", e => {
+  const more = e.target.closest(".more");
+  if (more) { const l = more.closest(".letter"); l.classList.toggle("full"); more.textContent = l.classList.contains("full") ? "收起" : "展开全文"; return; }
+  const ag = e.target.closest("[data-agent]"); if (ag) return openDetail(D.sid, ag.dataset.agent, false);
+  const fl = e.target.closest("[data-file]"); if (fl) return showModal("完整输出 · " + fl.dataset.file, "/api/file?p=" + encodeURIComponent(fl.dataset.file));
+  const ln = e.target.closest("[data-ln]");
+  if (ln) { const qs = new URLSearchParams({sid: realSid(D.sid), ln: ln.dataset.ln}); if (D.agent) qs.set("agent", D.agent);
+    return showModal(`原始记录 · 第 ${ln.dataset.ln} 行`, "/api/line?" + qs); }
+  const cm = e.target.closest(".capmore");
+  if (cm) { const row = cm.closest(".ev"); row.dataset.open = "1"; row.querySelectorAll(".cap.hid").forEach(c => c.classList.remove("hid")); cm.remove(); return; }
+  const cap = e.target.closest(".cap");
+  if (cap) { const rec = D.tools[cap.dataset.id]; if (!rec) return;
+    const was = cap.classList.contains("on");
+    rec.row.querySelectorAll(".cap").forEach(x => x.classList.remove("on")); rec.row.querySelector(".capd")?.remove();
+    if (!was) { cap.classList.add("on"); rec.row.lastElementChild.insertAdjacentHTML("beforeend", capDetail(rec)); } }
+});
+list.addEventListener("scroll", () => {
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 120;
+  D.follow = atBottom; $("#follow").classList.toggle("show", !atBottom);
+});
+$("#follow").onclick = () => { list.scrollTop = list.scrollHeight; D.follow = true; $("#follow").classList.remove("show"); };
+
+/* ---------- 开关 ---------- */
+document.querySelectorAll("#tgMode button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#tgMode button").forEach(x => x.classList.toggle("on", x === b));
+  list.classList.toggle("talk", b.dataset.m === "talk"); if (D.follow) list.scrollTop = list.scrollHeight;
+});
+const setMeta = on => { LS.ccmonMeta = on ? "1" : "0"; $("#bMeta").classList.toggle("on", on); list.classList.toggle("nometa", !on); };
+$("#bMeta").onclick = () => setMeta(!$("#bMeta").classList.contains("on"));
+setMeta(LS.ccmonMeta === "1");
+
+/* ---------- 和总览的钩子 ---------- */
+function onSessions() {
+  if (!D.sid) return;
+  renderSide(false);
+  for (const id in D.tools) if (!D.tools[id].res) paintCap(D.tools[id]);
+}
+function onTick() { if (D.sid) paintSubs(); }
+
+// 左上角面包屑：点了回楼下（关掉详情和信箱，滚回顶上）。打开详情时最后一级显示正在看谁
+function renderCrumbs() {
+  let t = "台式机上的 Claude 会话 · 只读";
+  if (D.sid) {
+    const it = G.live.find(x => x.sid === D.sid);
+    t = "正在看：" + ((it && (it.title || it.prompt || it.name)) || D.title || D.sid.slice(0, 8)) + (D.agent ? " · 小帮手" : "");
+  }
+  if ($("#cHere").textContent !== t) $("#cHere").textContent = t;
+  const st = document.querySelector(".status");   // 楼层多时状态句会挪位置，面包屑跟着它左对齐
+  if (st && !D.sid) $("#crumbs").style.left = Math.max(16, Math.round(st.getBoundingClientRect().left)) + "px";   // 打开详情时楼被放大，量出来的位置不准，沿用上次的
+}
+setInterval(renderCrumbs, 1000);
+for (const id of ["cHome", "cTheme"]) $("#" + id).onclick = e => { e.preventDefault(); closeAll(); window.scrollTo({top: 0}); };
+
+/* ---------- 启动 ---------- */
+Clawd.preload();
+poll();
+if (location.hash.length > 1) {
+  const [sid, agent] = decodeURIComponent(location.hash.slice(1)).split("/");
+  openDetail(sid, agent || null, false);
+}
+</script>
+</body>
+</html>

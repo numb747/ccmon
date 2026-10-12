@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话农场</title>
+<style>
+/* =========================================================
+   F · 像素 RPG 横版（Stardew Valley UI 语言迁移）
+   规则拆解：
+   1. 木框 = 9-slice：深棕描边 → 亮橙木条(上亮下暗) → 深色内线 → 羊皮纸底；角是整块画、只拉伸边。
+   2. 对话框 = 左文字区 + 右肖像区 + 名字卷轴，中间一道木隔板。
+   3. 肖像背景按游戏时间换 daybg / nightbg  →  这里按会话状态换白天 / 夜晚。
+   4. 字：深棕字 + 浅色 1px 投影；数字用像素字。
+   5. 小物件(工具/物品)放进「格子」—— 工具调用压成像素格子胶囊。
+   ========================================================= */
+:root{
+  --ink:#4a2410;          /* 主文字 深棕 */
+  --ink-2:#7a4a22;        /* 次文字 */
+  --paper:#fde3a7;        /* 羊皮纸 */
+  --paper-hi:#fff2d2;
+  --paper-lo:#efc27a;
+  --wood:#d9822f;
+  --wood-hi:#f4b55c;
+  --wood-lo:#a24f17;
+  --line:#3a1a08;
+  --busy:#3f7522;
+  --idle:#26365f;
+  --wait:#b8321e;
+  --done:#a0520e;
+  --dead:#5d5248;
+  --cjk:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Sarasa UI SC","Noto Sans CJK SC","Source Han Sans SC",sans-serif;
+  --mono:"Cascadia Mono","Sarasa Mono SC","JetBrains Mono",Consolas,monospace;
+  --frame3:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' shape-rendering='crispEdges'%3E%3Cpath fill='%233a1a08' d='M2 0h14v1h1v1h1v14h-1v1h-1v1H2v-1H1v-1H0V2h1V1h1z'/%3E%3Cpath fill='%23d9822f' d='M2 1h14v1h1v14h-1v1H2v-1H1V2h1z'/%3E%3Crect fill='%23f4b55c' x='2' y='1' width='14' height='1'/%3E%3Crect fill='%23f4b55c' x='1' y='2' width='1' height='14'/%3E%3Crect fill='%23a24f17' x='2' y='16' width='14' height='1'/%3E%3Crect fill='%23a24f17' x='16' y='2' width='1' height='14'/%3E%3Crect fill='%23b8661f' x='2' y='3' width='14' height='1'/%3E%3Crect fill='%23b8661f' x='2' y='14' width='14' height='1'/%3E%3Crect fill='%235a2a0c' x='4' y='4' width='10' height='10'/%3E%3Crect fill='%23efc27a' x='5' y='5' width='8' height='8'/%3E%3Crect fill='%23fde3a7' x='6' y='6' width='6' height='6'/%3E%3Crect fill='%237a3610' x='2' y='2' width='2' height='2'/%3E%3Crect fill='%237a3610' x='14' y='2' width='2' height='2'/%3E%3Crect fill='%237a3610' x='2' y='14' width='2' height='2'/%3E%3Crect fill='%237a3610' x='14' y='14' width='2' height='2'/%3E%3Crect fill='%23ffd08a' x='2' y='2' width='1' height='1'/%3E%3Crect fill='%23ffd08a' x='14' y='2' width='1' height='1'/%3E%3Crect fill='%23ffd08a' x='2' y='14' width='1' height='1'/%3E%3Crect fill='%23ffd08a' x='14' y='14' width='1' height='1'/%3E%3C/svg%3E");
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--cjk);color:var(--ink);font-size:15px;line-height:1.55;
+  /* 小屋木墙：横向木板 + 错缝 */
+  background:
+    repeating-linear-gradient(90deg, transparent 0 238px, rgba(0,0,0,.18) 238px 240px),
+    repeating-linear-gradient(180deg, #4b2f1b 0 44px, #563621 44px 46px, #2c1a0e 46px 48px);
+  overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+/* ---------- 9-slice 木框 ---------- */
+.frame{border-style:solid;border-width:18px;border-image:var(--frame3) 6 fill / 18px / 0 stretch;image-rendering:pixelated}
+.frame.s2{border-width:12px;border-image:var(--frame3) 6 fill / 12px / 0 stretch}
+
+/* ---------- 像素精灵 ---------- */
+.spr{position:relative;display:inline-block;flex:none;vertical-align:middle}
+.spr > i{position:absolute;display:block}
+.a2 > .f1{animation:fA var(--t,1.6s) steps(1,end) infinite}
+.a2 > .f2{animation:fB var(--t,1.6s) steps(1,end) infinite}
+.a3 > .f1{animation:f3a var(--t,1.8s) steps(1,end) infinite}
+.a3 > .f2{animation:f3b var(--t,1.8s) steps(1,end) infinite}
+.a3 > .f3{animation:f3c var(--t,1.8s) steps(1,end) infinite}
+@keyframes fA{0%{opacity:1}50%{opacity:0}100%{opacity:0}}
+@keyframes fB{0%{opacity:0}50%{opacity:1}100%{opacity:1}}
+@keyframes f3a{0%{opacity:1}33.33%{opacity:0}100%{opacity:0}}
+@keyframes f3b{0%{opacity:0}33.33%{opacity:1}66.66%{opacity:0}100%{opacity:0}}
+@keyframes f3c{0%{opacity:0}66.66%{opacity:1}100%{opacity:1}}
+
+/* ---------- 页面骨架 ---------- */
+.page{height:100vh;display:flex;flex-direction:column;padding:18px 28px 16px;gap:14px}
+.top{display:flex;gap:14px;flex:none}
+.hud{flex:1;display:flex;align-items:center;gap:26px;padding:4px 18px;min-height:96px}
+.logo{display:flex;flex-direction:column;gap:5px;padding-right:24px;border-right:3px solid var(--paper-lo)}
+.logo small{font-size:13px;color:var(--ink-2);letter-spacing:.2em}
+.logo{cursor:pointer}
+.logo:hover small{text-decoration:underline;text-underline-offset:3px}
+.logo .bk{display:none}
+/* 详情打开时顶栏浮到遮罩上面，CCMON 牌子变成「← 回田垄」 */
+body.open .top{position:relative;z-index:31}
+body.open .logo .nm{display:none}
+body.open .logo .bk{display:inline}
+.hud-main{display:flex;flex-direction:column;gap:2px}
+.hud-line{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:700;line-height:1.25;text-shadow:1px 1px 0 rgba(214,148,82,.55)}
+.hud-line .sep{color:var(--paper-lo);text-shadow:none;font-weight:400;margin:0 4px}
+.hud-line .w{color:var(--wait)}
+.hud-sub{font-size:14px;color:var(--ink-2)}
+.clock{width:288px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:2px 12px}
+.clock-date{display:flex;justify-content:space-between;align-items:baseline;font-weight:700;font-size:15px}
+.clock-date span{font-weight:400;font-size:13px;color:var(--ink-2)}
+.clock-row{display:flex;align-items:center;justify-content:space-between}
+.tokens{display:flex;gap:6px;align-items:center}
+
+.lanes{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
+.lane{flex:1 1 0;max-height:220px;min-height:0;display:grid;grid-template-columns:var(--signw,340px) 12px 1fr;cursor:pointer;container-type:size;position:relative;transition:transform .2s steps(2)}
+.lane:hover{transform:translateY(-2px)}
+.lane:focus-visible{outline:3px dashed #fff2d2;outline-offset:3px}
+.lanes.dense .lane{border-width:12px;border-image:var(--frame3) 6 fill / 12px / 0 stretch}
+
+/* 木牌（左端） */
+.sign{padding:4px 16px 4px 6px;display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0}
+.sign-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;line-height:1;padding:6px 9px 6px 8px;color:#fff8e6;background:var(--c);
+  box-shadow:0 -2px 0 0 var(--line),0 2px 0 0 var(--line),-2px 0 0 0 var(--line),2px 0 0 0 var(--line),inset 0 -2px 0 rgba(0,0,0,.25),inset 0 2px 0 rgba(255,255,255,.18)}
+.st-busy{--c:var(--busy)} .st-idle{--c:var(--idle)} .st-waiting{--c:var(--wait)} .st-done{--c:var(--done)} .st-dead{--c:var(--dead)}
+.dur{display:flex;align-items:flex-end;gap:8px}
+.dur small{font-size:12px;color:var(--ink-2);line-height:1;padding-bottom:2px}
+.title{font-size:17px;font-weight:700;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:1px 1px 0 rgba(214,148,82,.45)}
+.meta{display:flex;flex-direction:column;gap:0;min-width:0}
+.meta .name{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink)}
+.meta .cwd{font-family:var(--mono);font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@container (max-height:150px){
+  .sign{gap:3px}
+  .title{-webkit-line-clamp:1;font-size:16px}
+  .meta .cwd{display:none}
+}
+@container (max-height:64px){ .meta{display:none} }
+.lanes.dense .hills.back{height:26%}.lanes.dense .hills{height:16%}
+
+/* 木隔板 */
+.divider{background:
+  linear-gradient(90deg,var(--line) 0 2px,var(--wood-hi) 2px 4px,var(--wood) 4px 8px,var(--wood-lo) 8px 10px,var(--line) 10px 12px)}
+
+/* ---------- 场景 ---------- */
+.scene{position:relative;overflow:hidden;--ground:36%}
+.scene .sky{position:absolute;inset:0}
+.day .sky{background:linear-gradient(180deg,#78c9ef 0 34%,#8fd4f3 34% 56%,#a9def6 56% 100%)}
+.night .sky{background:linear-gradient(180deg,#0f1a36 0 34%,#152446 34% 58%,#1c3159 58% 100%)}
+.dusk .sky{background:linear-gradient(180deg,#4f7fae 0 24%,#8fb0c4 24% 40%,#f2b36b 40% 54%,#f8d28a 54% 100%)}
+.gray .sky{background:linear-gradient(180deg,#5a5f66 0 40%,#6d7178 40% 100%)}
+.hills{position:absolute;left:0;right:0;bottom:calc(var(--ground) - 2px);height:30%}
+.day .hills{background:#76bd58} .night .hills{background:#18332f} .dusk .hills{background:#5f8a3e} .gray .hills{background:#4b4f52}
+.hills.back{height:42%;opacity:1}
+.day .hills.back{background:#a0d5a0} .night .hills.back{background:#14283a} .dusk .hills.back{background:#d9955b} .gray .hills.back{background:#5b5e63}
+.ground{position:absolute;left:0;right:0;bottom:0;height:var(--ground)}
+.day .ground{background:
+  linear-gradient(180deg,#5fb33a 0 6px,#3f8a2a 6px 9px,transparent 9px),
+  repeating-linear-gradient(180deg,#a06a36 0 10px,#8a5a2b 10px 13px)}
+.night .ground{background:
+  linear-gradient(180deg,#2c5638 0 6px,#1e4029 6px 9px,transparent 9px),
+  repeating-linear-gradient(180deg,#4b3423 0 10px,#3e2b1d 10px 13px)}
+.dusk .ground{background:
+  linear-gradient(180deg,#6a9a3c 0 6px,#4c7a2c 6px 9px,transparent 9px),
+  repeating-linear-gradient(180deg,#8e5c31 0 10px,#7a4e29 10px 13px)}
+.gray .ground{background:linear-gradient(180deg,#6b6f63 0 6px,#575b51 6px 9px,#5a5048 9px)}
+.tilled{position:absolute;bottom:calc(var(--ground) - 30px);height:14px;background:repeating-linear-gradient(90deg,#6e4320 0 10px,#7d4d26 10px 12px);box-shadow:0 2px 0 #5a361a}
+.night .tilled{background:repeating-linear-gradient(90deg,#33241a 0 10px,#3b2a1e 10px 12px);box-shadow:0 2px 0 #2a1d14}
+.pos{position:absolute}
+.glow{position:absolute;border-radius:50%;background:radial-gradient(closest-side,rgba(255,170,70,.42),rgba(255,140,50,.16) 60%,transparent);pointer-events:none}
+.cloud{animation:drift 140s linear infinite}
+@keyframes drift{from{transform:translateX(0)}to{transform:translateX(-1200px)}}
+.walker{animation:walk var(--walkT,18s) linear infinite}
+@keyframes walk{
+  0%{transform:translateX(0) scaleX(1)}
+  48%{transform:translateX(var(--walk,400px)) scaleX(1)}
+  50%{transform:translateX(var(--walk,400px)) scaleX(-1)}
+  98%{transform:translateX(0) scaleX(-1)}
+  100%{transform:translateX(0) scaleX(1)}
+}
+.hop{animation:hop 1.6s steps(1,end) infinite}
+@keyframes hop{0%{transform:translateY(0)}50%{transform:translateY(-4px)}100%{transform:translateY(0)}}
+.zz{position:absolute;animation:zz 3.6s steps(6,end) infinite;opacity:0}
+.zz{animation-delay:-1.2s}.zz.b{animation-delay:-3s;margin-left:16px}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}15%{opacity:1}80%{opacity:1}100%{opacity:0;transform:translate(12px,-30px)}}
+.bob{animation:bob 2s steps(1,end) infinite}
+@keyframes bob{0%{transform:translateY(0)}50%{transform:translateY(-3px)}100%{transform:translateY(0)}}
+.bubble{position:absolute;background:#fff8e6;color:var(--ink);font-size:13px;font-weight:700;padding:3px 8px;white-space:nowrap;
+  box-shadow:0 -2px 0 var(--line),0 2px 0 var(--line),-2px 0 0 var(--line),2px 0 0 var(--line)}
+.bubble::after{content:"";position:absolute;left:12px;bottom:-8px;width:6px;height:6px;background:#fff8e6;box-shadow:2px 0 0 var(--line),-2px 0 0 var(--line),0 2px 0 var(--line)}
+.scene-tag{position:absolute;right:12px;bottom:8px;font-size:12px;font-weight:700;color:#fff3d6;background:rgba(43,22,8,.62);padding:2px 8px;letter-spacing:.05em}
+
+/* ---------- 页脚 ---------- */
+.foot{flex:none;display:flex;align-items:center;justify-content:space-between;min-height:56px}
+.hint{font-size:14px;color:#f3dcb0;display:flex;align-items:center;gap:10px}
+.hint b{color:#ffe7b0}
+.logbtn{display:flex;align-items:center;gap:12px;padding:0 16px 0 10px;min-height:62px}
+.logbtn .lt{display:flex;flex-direction:column;line-height:1.25;text-align:left}
+.logbtn .lt b{font-size:15px}
+.logbtn .lt span{font-size:12px;color:var(--ink-2);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logbtn:hover{transform:translateY(-2px)}
+
+/* ---------- 遮罩 ---------- */
+#veil{position:fixed;inset:0;background:rgba(24,12,4,.62);opacity:0;pointer-events:none;transition:opacity .3s steps(3)}
+body.open #veil{opacity:1;pointer-events:auto}
+
+/* ---------- 日志本 ---------- */
+#log{position:fixed;right:28px;bottom:92px;width:560px;max-height:640px;display:flex;flex-direction:column;
+  transform:translateY(24px);opacity:0;pointer-events:none;transition:transform .24s steps(4),opacity .24s steps(4);z-index:20;filter:drop-shadow(0 8px 0 rgba(20,10,4,.45))}
+body.log-open #log{transform:none;opacity:1;pointer-events:auto}
+.log-head{display:flex;align-items:baseline;justify-content:space-between;padding:0 4px 10px;border-bottom:3px solid var(--paper-lo);margin-bottom:6px}
+.log-head h3{font-size:18px}
+.log-head span{font-size:13px;color:var(--ink-2)}
+.log-list{overflow:auto;padding-right:4px}
+.log-row{display:grid;grid-template-columns:68px 1fr;gap:10px;padding:7px 4px;border-bottom:2px dotted rgba(122,74,34,.35);align-items:start}
+.log-row:last-child{border-bottom:0}
+.log-ago{font-size:12px;color:var(--ink-2);padding-top:3px;white-space:nowrap}
+.log-t{font-size:14px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log-t .role{display:inline-block;font-size:12px;font-weight:700;color:#fff8e6;background:#7a4a22;padding:0 6px;margin-right:6px;line-height:18px;vertical-align:1px}
+.log-t .none{color:var(--ink-2)}
+.log-c{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+
+/* ---------- 详情：RPG 对话框 ---------- */
+#detail{position:fixed;left:24px;right:24px;bottom:14px;height:76vh;z-index:30;display:grid;grid-template-columns:1fr 12px 316px;
+  transform:translateY(110%);transition:transform .36s steps(6,end)}
+body.open #detail{transform:none}
+body.instant #detail,body.instant #veil{transition:none}
+.d-main{display:flex;flex-direction:column;min-height:0;padding:2px 14px 0 4px}
+.d-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:10px;border-bottom:3px solid var(--paper-lo)}
+.d-head h3{font-size:22px;line-height:1.3;text-shadow:1px 1px 0 rgba(214,148,82,.55)}
+.d-kicker{font-size:13px;color:var(--ink-2);margin-bottom:2px}
+.d-legend{display:flex;gap:14px;font-size:12px;color:var(--ink-2);white-space:nowrap;flex:none}
+.d-legend span{display:inline-flex;align-items:center;gap:5px}
+.d-legend i{display:inline-block;width:10px;height:10px;box-shadow:0 0 0 2px var(--line)}
+.d-feed{flex:1;min-height:0;overflow:auto;padding:14px 10px 18px 2px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin;scrollbar-color:var(--wood-lo) transparent}
+.d-side{padding:2px 6px 0 14px;display:flex;flex-direction:column;gap:12px;min-height:0}
+
+/* 来信（prompt） */
+.letter{background:#fff4d8;padding:12px 16px 12px;position:relative;
+  box-shadow:0 0 0 2px #c98f4c, 4px 4px 0 2px rgba(122,74,34,.25);
+}
+.letter-h{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.letter-from{font-size:12px;font-weight:700;color:#fff8e6;background:#8a4a1c;padding:1px 7px;line-height:20px;flex:none}
+.letter-sum{font-size:16px;font-weight:700;line-height:1.35;flex:1;min-width:0}
+.time{font-family:var(--mono);font-size:12px;color:var(--ink-2);flex:none}
+.letter-body{font-size:14px;line-height:1.7;color:#5a3418;max-height:84px;overflow:hidden;position:relative}
+.letter:not(.full) .letter-body.long::after{content:"";position:absolute;left:0;right:0;bottom:0;height:30px;background:linear-gradient(180deg,rgba(255,244,216,0),#fff4d8)}
+.letter-body p,.letter-body ul,.letter-body ol{margin:0}.letter-body .md{font-size:14px;line-height:1.7}.letter-body table{font-size:13px}
+.letter.full .letter-body{max-height:none}
+.more{font-size:12px;font-weight:700;color:#8a4a1c;margin-top:4px;text-decoration:underline;text-underline-offset:3px}
+.letter.you{background-color:#fffaf0;box-shadow:0 0 0 2px #3f7522,4px 4px 0 2px rgba(63,117,34,.2)}
+.letter.you .letter-from{background:#3f7522}
+
+/* Claude 回复（text） */
+.reply{display:grid;grid-template-columns:52px 1fr;gap:12px;align-items:start}
+.ava{width:52px;height:52px;display:flex;align-items:center;justify-content:center;background:#8fd4f3;box-shadow:0 0 0 2px var(--line),inset 0 -10px 0 #5fb33a}
+.reply-b{background:var(--paper-hi);padding:10px 16px 12px;box-shadow:0 0 0 2px #b8661f;position:relative}
+.reply-b::before{content:"";position:absolute;left:-8px;top:16px;width:6px;height:6px;background:var(--paper-hi);box-shadow:-2px 0 0 #b8661f,0 -2px 0 #b8661f,0 2px 0 #b8661f}
+.reply-h{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-bottom:2px}
+.reply-h b{color:var(--ink);font-size:13px}
+.md{font-size:15px;line-height:1.72}
+.md p{margin:4px 0}
+.md ul,.md ol{margin:4px 0 4px 1.4em}
+.md li{margin:1px 0}
+.md code{font-family:var(--mono);font-size:13px;background:#f6d79c;padding:0 4px}
+.md table{border-collapse:collapse;margin:6px 0;font-size:14px;width:100%}
+.md th,.md td{border:2px solid #e2b06a;padding:3px 8px;text-align:left;vertical-align:top}
+.md th{background:#f8d895}
+
+/* 动作行：工具胶囊 + 思考折叠 */
+.acts{display:flex;flex-wrap:wrap;gap:8px;padding-left:64px;align-items:center}
+.cap{display:inline-flex;align-items:center;gap:6px;max-width:100%;font-size:13px;line-height:1;padding:6px 9px 6px 6px;background:#f7d79a;color:var(--ink);
+  box-shadow:0 0 0 2px #8a4a1c,inset 0 -2px 0 #e2b06a;white-space:nowrap}
+.cap .nm{font-family:var(--mono);font-weight:700;font-size:12px}
+.cap .ds{overflow:hidden;text-overflow:ellipsis;max-width:420px;color:#5a3418}
+.cap.err{box-shadow:0 0 0 2px var(--wait),inset 0 -2px 0 #e2b06a}
+.cap.think{background:#dfe9f2;box-shadow:0 0 0 2px #3c5478,inset 0 -2px 0 #c2d2e2;cursor:pointer;color:#26365f}
+.cap.think .ds{color:#3c5478}
+.think-body{flex-basis:100%;font-size:14px;line-height:1.65;color:#2f4466;background:#eef3f8;padding:8px 12px;box-shadow:0 0 0 2px #9fb4cc;display:none;font-style:italic}
+.think-body.on{display:block}
+.note{margin-left:64px;font-size:14px;line-height:1.65;color:#5a3418;padding:8px 12px;border:2px dashed #c98f4c;background:rgba(255,244,216,.6)}
+.note b{font-size:12px;color:#8a4a1c;margin-right:8px}
+.nodata{margin:auto;text-align:center;font-size:15px;color:var(--ink-2);max-width:420px}
+
+/* 肖像侧栏 */
+.portrait .scene{position:absolute;inset:0}
+.portrait{height:212px;position:relative;box-shadow:0 0 0 3px var(--line),inset 0 0 0 3px rgba(255,255,255,.25);flex:none}
+.scroll{position:relative;margin:-2px 12px 0;text-align:center;font-family:var(--mono);font-weight:700;font-size:15px;padding:6px 10px;background:#f6dca4;
+  box-shadow:0 0 0 2px var(--line),inset 0 -3px 0 #e2b06a}
+.scroll::before,.scroll::after{content:"";position:absolute;top:4px;width:12px;height:calc(100% - 8px);background:#d9a85c;box-shadow:0 0 0 2px var(--line)}
+.scroll::before{left:-16px}.scroll::after{right:-16px}
+.facts{display:flex;flex-direction:column;gap:8px;font-size:14px;overflow:auto;min-height:0}
+.facts .row1{display:flex;align-items:center;justify-content:space-between}
+.fact dt{font-size:12px;color:var(--ink-2);font-weight:700}
+.fact dd{line-height:1.45;word-break:break-all}
+.fact dd.mono{font-family:var(--mono);font-size:13px}
+.esc{margin-top:auto;font-size:12px;color:var(--ink-2);text-align:right;padding-bottom:2px}
+.xbtn{position:absolute;top:-30px;right:-12px;z-index:2;filter:drop-shadow(0 3px 0 rgba(0,0,0,.35))}
+.xbtn:hover{transform:translateY(-2px)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ================= 实时版追加样式 ================= */
+.lanes{overflow-y:auto;overflow-x:hidden;padding:2px 4px 2px 0;scrollbar-width:thin;scrollbar-color:var(--wood) transparent}
+.lanes.dense{gap:10px}
+.lanes.many .lane{flex:0 0 108px;max-height:none}
+.lane{min-height:100px}
+.meta .name .subn{font-family:var(--cjk);font-weight:400;color:var(--ink-2);margin-left:8px;font-size:12px}
+
+/* 不同活计 = 不同地面（田 / 石坊 / 码头木板 / 花园） */
+.day .ground.g-stone,.night .ground.g-stone,.dusk .ground.g-stone{background:
+  linear-gradient(180deg,#5fb33a 0 6px,#3f8a2a 6px 9px,transparent 9px),
+  repeating-linear-gradient(180deg,transparent 0 12px,#5e5b58 12px 14px),
+  repeating-linear-gradient(90deg,#9a958f 0 26px,#6e6a66 26px 28px)}
+.day .ground.g-boards,.night .ground.g-boards,.dusk .ground.g-boards{background:
+  linear-gradient(180deg,#5fb33a 0 6px,#3f8a2a 6px 9px,#4a2e17 9px 12px,transparent 12px),
+  repeating-linear-gradient(90deg,transparent 0 118px,#6e4320 118px 120px),
+  repeating-linear-gradient(180deg,#c48d52 0 11px,#9a6634 11px 13px)}
+.day .ground.g-garden,.night .ground.g-garden,.dusk .ground.g-garden{background:
+  linear-gradient(180deg,#6cc046 0 6px,#4e9a33 6px 9px,transparent 9px),
+  repeating-linear-gradient(90deg,#5fb33a 0 14px,#55a634 14px 16px)}
+.night .ground{filter:brightness(.42) saturate(.75)}
+.dusk .ground{filter:brightness(.85) sepia(.15)}
+.gray .ground{filter:grayscale(1) brightness(.7)}
+.pond{position:absolute;height:14px;clip-path:polygon(6px 0,calc(100% - 6px) 0,100% 5px,100% calc(100% - 5px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 5px),0 5px);background:#4f9fd8;box-shadow:0 -3px 0 #8fd0f5 inset,0 0 0 3px #2f6a99}
+.night .pond{filter:brightness(.4)}
+.helpers{position:absolute;display:flex;gap:4px;align-items:flex-end}
+.helpers .more{font-size:12px;font-weight:700;color:#fff8e6;background:rgba(43,22,8,.62);padding:0 5px;line-height:18px;margin-left:2px}
+.helper.live{animation:hop 1.6s steps(1,end) infinite}
+.helper.live:nth-child(2){animation-delay:-.5s}.helper.live:nth-child(3){animation-delay:-1s}
+
+/* 空态 */
+.empty-farm{flex:0 0 260px;display:grid;grid-template-columns:420px 12px 1fr}
+.empty-farm .sign{padding:6px 18px}
+.empty-farm .sign h2{font-size:20px}
+.empty-farm .sign p{font-size:14px;color:var(--ink-2)}
+
+/* 连接状态 / 后端出错（不显眼） */
+.conn{font-size:12px;color:var(--ink-2);text-align:right}
+.conn.bad{color:var(--wait);font-weight:700}
+.hud-sub .warn{color:var(--wait);font-weight:700}
+.offline-note{display:none;margin-left:10px;font-size:13px;font-weight:700;color:#fff8e6;background:#8a4a1c;padding:1px 8px}
+body.offline .offline-note{display:inline-block}
+body.offline .lanes{filter:saturate(.55) brightness(.9)}
+
+/* 页脚：主题木牌 + 提醒音 */
+.foot-l{display:flex;align-items:center;gap:14px}
+.foot-r{display:flex;align-items:center;gap:12px}
+.tsign{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:0 10px;min-height:40px;color:var(--ink)}
+.tsign:hover,.sndbtn:hover{transform:translateY(-2px)}
+.sndbtn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;padding:0 10px;min-height:40px}
+.sndbtn .st{font-weight:400;color:var(--ink-2)}
+.sndbtn.on .st{color:var(--busy);font-weight:700}
+.log-row{cursor:pointer}
+.log-row:hover{background:rgba(239,194,122,.45)}
+
+/* 详情：实时时间线 */
+.d-tools{display:flex;gap:8px;align-items:center;flex:none}
+.tg{font-size:12px;font-weight:700;padding:4px 9px;background:#f7d79a;box-shadow:0 0 0 2px #8a4a1c;color:var(--ink)}
+.tg.on{background:#8a4a1c;color:#fff8e6}
+.d-head .back{font-size:13px;font-weight:700;color:#fff8e6;background:#3f7522;padding:2px 9px;margin-right:8px;vertical-align:3px;box-shadow:0 0 0 2px var(--line)}
+.d-banner{display:none;margin-top:8px;font-size:14px;font-weight:700;color:#fff8e6;background:var(--wait);padding:5px 12px;box-shadow:0 0 0 2px var(--line)}
+.d-banner.show{display:block}
+.d-stat{font-size:12px;color:var(--ink-2);margin-left:6px}
+.d-stat.bad{color:var(--wait);font-weight:700}
+.d-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.loadmore{align-self:center;font-size:13px;font-weight:700;padding:5px 12px;background:#f7d79a;box-shadow:0 0 0 2px #8a4a1c}
+.follow{position:absolute;right:18px;bottom:14px;display:none;font-size:13px;font-weight:700;padding:6px 12px;background:#3f7522;color:#fff8e6;box-shadow:0 0 0 2px var(--line),0 4px 0 2px rgba(0,0,0,.25)}
+.follow.show{display:block}
+.ev{position:relative}
+.raw{position:absolute;right:6px;top:4px;font-family:var(--mono);font-size:12px;color:var(--ink-2);padding:0 5px;opacity:0;background:rgba(255,242,210,.9)}
+.ev:hover > .raw,.ev:hover > div > .raw{opacity:1}
+.lnk{font-size:12px;font-weight:700;color:#8a4a1c;text-decoration:underline;text-underline-offset:3px;margin-right:10px}
+.reply .lnk,.letter .lnk{display:inline-block;margin-top:4px}
+.cap{cursor:pointer}
+.cap .stt{font-size:12px;color:var(--ink-2);margin-left:2px}
+.cap .stt.run{color:#2f6a99;font-weight:700}
+.cap .stt.wait{color:var(--wait);font-weight:700}
+.cap .stt.ok{color:var(--busy)}
+.cap .stt.err{color:var(--wait);font-weight:700}
+.cap.open{background:#ffe7b0}
+.tbody{flex-basis:100%;display:none;background:#fff8e6;box-shadow:0 0 0 2px #c98f4c;padding:8px 12px;font-size:13px;min-width:0}
+.tbody.on{display:block}
+.tbody .sec + .sec{margin-top:8px;padding-top:8px;border-top:2px dotted #e2b06a}
+.tbody .cp{font-size:12px;color:var(--ink-2);margin-bottom:3px;font-weight:700}
+.tbody pre{margin:0;font:12.5px/1.55 var(--mono);white-space:pre-wrap;word-break:break-all;max-height:420px;overflow:auto;color:#3a2210}
+.diff .del{color:#a12a18;background:#fbe0d8}.diff .add{color:#2f6a1a;background:#e3f2d3}
+.todo .done{color:var(--ink-2);text-decoration:line-through}.todo .doing{color:#a0520e;font-weight:700}
+.sysl{align-self:center;font-size:12px;color:var(--ink-2);padding:0 10px;background:linear-gradient(90deg,transparent,rgba(239,194,122,.5),transparent)}
+.feed-meta{display:none}
+.show-meta .feed-meta{display:block}
+.note.meta{border-style:dotted;font-size:13px}
+.note.meta .bd{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}
+.md pre.code{font:12.5px/1.5 var(--mono);background:#f6dca4;padding:8px 10px;overflow-x:auto;white-space:pre;margin:4px 0;box-shadow:0 0 0 2px #e2b06a}
+.subs{display:flex;flex-direction:column;gap:4px}
+.subrow{display:flex;align-items:center;gap:8px;text-align:left;font-size:13px;line-height:1.35;padding:3px 4px}
+.subrow:hover,.subrow.sel{background:rgba(239,194,122,.55)}
+.subrow .tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subrow .tp{font-family:var(--mono);font-size:12px;font-weight:700}
+.subrow .lv{font-size:12px;color:var(--busy);font-weight:700;flex:none}
+
+/* 原始 JSON / 全文 弹窗 */
+#modal{position:fixed;inset:6vh 8vw;z-index:50;display:none;flex-direction:column}
+#modal.show{display:flex}
+#modal .bar{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink-2);padding-bottom:8px;border-bottom:3px solid var(--paper-lo)}
+#modal pre{flex:1;min-height:0;overflow:auto;margin-top:8px;font:12.5px/1.55 var(--mono);white-space:pre-wrap;word-break:break-all}
+#modal .close{font-size:13px;font-weight:700;padding:3px 10px;background:#f7d79a;box-shadow:0 0 0 2px #8a4a1c}
+body.modal #veil{z-index:40;opacity:1;pointer-events:auto}
+
+.lanes.dense .zz{animation-name:zzs}
+@keyframes zzs{0%{opacity:0;transform:translate(0,0)}15%{opacity:1}80%{opacity:1}100%{opacity:0;transform:translate(10px,-12px)}}
+.md a{color:#2f6a99;text-decoration:underline;text-underline-offset:3px}
+.st-history{--c:var(--dead)}
+.d-head h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:21px}
+.helper.live{animation:none}
+.helper{display:inline-flex}
+.night .clawd{filter:brightness(.82)}
+.gray .clawd{filter:grayscale(.6) brightness(.85)}
+.ava{overflow:hidden;align-items:flex-end!important;padding-bottom:2px}
+.subrow .helper{flex:none}
+.ava::after{content:"";width:45px;height:48px;background:url(/assets/clawd/clawd-static-base.svg) center/contain no-repeat;image-rendering:pixelated}
+
+/* ---------- 打磨轮 ---------- */
+.cap.hid,.tbody.hid,.think-body.hid{display:none!important}
+.actmore{font-size:12px;font-weight:700;color:#8a4a1c;padding:5px 10px;background:repeating-linear-gradient(90deg,#f7d79a 0 6px,#efc77f 6px 8px);box-shadow:0 0 0 2px #c98f4c}
+.actmore:hover{background:#ffe7b0}
+.scene-tag.wait{left:12px;right:auto;top:8px;bottom:auto;background:var(--wait);font-size:13px;box-shadow:0 0 0 2px var(--line)}
+.lanes.dense .scene-tag.wait{top:4px;font-size:12px;padding:0 6px}
+.lane.st-waiting{outline:3px solid var(--wait);outline-offset:-1px}
+/* 闲着：整条田垄（连木牌）一起入夜，余光里成片变暗 */
+.lane.st-idle .sign,.lane.st-done .sign{background:linear-gradient(rgba(38,54,95,.13),rgba(38,54,95,.13))}
+.lane.st-idle .title{color:#33405e}
+.evbub{left:72%;bottom:62%;z-index:3;animation:evpop 6s steps(1,end) forwards}
+.evbub.w{background:#ffe1d8}
+@keyframes evpop{0%{opacity:1}85%{opacity:1}100%{opacity:0}}
+.lane.flash .divider{background:linear-gradient(90deg,var(--line) 0 2px,#ffe27a 2px 10px,var(--line) 10px 12px)}
+.d-head h3 .role,.log-t .role{display:inline-block;font-size:12px;font-weight:700;color:#fff8e6;background:#7a4a22;padding:0 6px;margin-right:8px;line-height:20px;vertical-align:4px;text-shadow:none}
+body.offline #hudSub{display:none}
+body.offline .offline-note{margin-left:0}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <header class="hud frame" id="hud">
+      <div class="logo" id="logo"></div>
+      <div class="hud-main">
+        <div class="hud-line" id="hudLine">连接中…</div>
+        <div class="hud-sub"><span id="hudSub">正在连台式机…</span><span class="offline-note" id="offNote">连不上台式机，正在重试</span></div>
+      </div>
+    </header>
+    <div class="clock frame" id="clock">
+      <div class="clock-date"><b id="clkDate"></b><span class="conn" id="conn">连接中…</span></div>
+      <div class="clock-row"><span id="clkTime"></span><div class="tokens" id="tokens" title="每个图标是一个在线会话"></div></div>
+    </div>
+  </div>
+  <main class="lanes" id="lanes"></main>
+  <footer class="foot">
+    <div class="foot-l">
+      <button class="tsign frame s2" data-theme="cats">去宿舍 →</button>
+      <button class="tsign frame s2" data-theme="night">去夜景公寓 →</button>
+      <div class="hint" id="hint"></div>
+    </div>
+    <div class="foot-r">
+      <button class="sndbtn frame s2" id="snd" title="有会话等你处理时响两声（浏览器要求先点一下页面才能出声）"></button>
+      <button class="logbtn frame s2" id="logbtn" aria-haspopup="dialog"></button>
+    </div>
+  </footer>
+</div>
+<div id="veil"></div>
+<section id="log" class="frame" role="dialog" aria-label="收成日志"></section>
+<section id="detail" class="frame" role="dialog" aria-label="会话详情">
+  <button class="xbtn" id="xbtn" aria-label="关闭"></button>
+  <div class="d-main">
+    <div class="d-head">
+      <div style="min-width:0">
+        <div class="d-kicker"><span id="dKicker"></span><span class="d-stat" id="dStat"></span></div>
+        <h3 id="dTitle"></h3>
+      </div>
+      <div class="d-tools">
+        <button class="tg" id="tgMeta" title="显示注入的上下文、hook、斜杠命令等系统消息">系统消息</button>
+      </div>
+    </div>
+    <div class="d-banner" id="dBanner"></div>
+    <div class="d-wrap">
+      <div class="d-feed" id="feed"></div>
+      <button class="follow" id="follow">↓ 回到底部</button>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <aside class="d-side">
+    <div class="portrait" id="dPortrait"></div>
+    <div class="scroll" id="dName"></div>
+    <dl class="facts" id="dFacts"></dl>
+    <div class="esc">按 Esc 或点外面合上</div>
+  </aside>
+</section>
+<section id="modal" class="frame" role="dialog"><div class="bar"><span id="mTitle"></span><button class="close" id="mClose">关闭（Esc）</button></div><pre id="mBody"></pre></section>
+<script src="/assets/clawd/clawd.js"></script>
+<script src="/assets/ccmon/alert.js"></script>
+<script>
+"use strict";
+/* ================= 像素引擎 ================= */
+// rows: 字符串数组；pal: 字符→颜色；'.' 透明。以 box-shadow 逐像素绘制（元素自身放在 -P,-P，避开 box-shadow 不画在盒内的问题）
+function shadows(rows, pal, P, sh){
+  const out=[];
+  const main=[];
+  rows.forEach((r,y)=>{for(let x=0;x<r.length;x++){const c=r[x];if(c!=='.'&&c!==' '&&pal[c])main.push(`${(x+1)*P}px ${(y+1)*P}px 0 ${pal[c]}`)}});
+  return main.concat(out).join(',');
+}
+function dims(frames){return {w:Math.max(...frames.flat().map(r=>r.length)),h:Math.max(...frames.map(f=>f.length))}}
+function spr(frames, pal, P, opt={}){
+  if(typeof frames[0]==='string') frames=[frames];
+  const {w,h}=dims(frames);
+  const n=frames.length, cls=n===2?'a2':n===3?'a3':'';
+  const t=opt.t?`--t:${opt.t};`:'';
+  const ex=0;const fl=opt.sh?`filter:drop-shadow(2px 2px 0 ${opt.sh});`:'';
+  const is=frames.map((f,i)=>`<i class="f${i+1}" style="width:${P}px;height:${P}px;left:-${P}px;top:-${P}px;box-shadow:${shadows(f,pal,P,opt.sh)}"></i>`).join('');
+  return `<span class="spr ${cls} ${opt.cls||''}" style="width:${w*P+ex}px;height:${h*P+ex}px;${t}${fl}${opt.style||''}">${is}</span>`;
+}
+// 画布合成
+function cv(w,h){return Array.from({length:h},()=>Array(w).fill('.'))}
+function stamp(c,rows,ox,oy){rows.forEach((r,y)=>{for(let x=0;x<r.length;x++){if(r[x]!=='.'&&c[oy+y]&&c[oy+y][ox+x]!==undefined)c[oy+y][ox+x]=r[x]}});return c}
+function put(c,pts,ch){pts.forEach(([x,y])=>{if(c[y]&&c[y][x]!==undefined)c[y][x]=ch});return c}
+const rows=c=>c.map(r=>r.join(''));
+
+/* ---------- 像素字（只用于数字与少量英文） ---------- */
+const GLYPH={
+ '0':['###','#.#','#.#','#.#','###'],'1':['.#.','##.','.#.','.#.','###'],'2':['###','..#','###','#..','###'],
+ '3':['###','..#','###','..#','###'],'4':['#.#','#.#','###','..#','..#'],'5':['###','#..','###','..#','###'],
+ '6':['###','#..','###','#.#','###'],'7':['###','..#','..#','.#.','.#.'],'8':['###','#.#','###','#.#','###'],
+ '9':['###','#.#','###','..#','###'],'h':['#..','#..','###','#.#','#.#'],'m':['.....','####.','#.#.#','#.#.#','#.#.#'],
+ 'd':['..#','..#','###','#.#','###'],':':['.','#','.','#','.'],'.':['.','.','.','.','#'],'Z':['###','..#','.#.','#..','###'],
+ 'C':['.###','#...','#...','#...','.###'],'M':['#...#','##.##','#.#.#','#...#','#...#'],'O':['.##.','#..#','#..#','#..#','.##.'],
+ 'N':['#..#','##.#','#.##','#..#','#..#'],' ':['.','.','.','.','.'],'<':['..#','.#.','#..','.#.','..#']
+};
+function ptext(str,P,color,sh){
+  const r=['','','','',''];
+  [...str].forEach((ch,i)=>{const g=GLYPH[ch]||GLYPH[' '];for(let y=0;y<5;y++)r[y]+=g[y]+(i<str.length-1?'.':'')});
+  return spr(r.map(s=>s.replace(/#/g,'x')),{x:color},P,{sh});
+}
+
+/* ---------- 时长 ---------- */
+function dur(sec){
+  sec=Math.max(0,Math.round(sec));
+  if(sec<60) return '<1m';
+  const m=Math.floor(sec/60);
+  if(m<60) return m+'m';
+  const h=Math.floor(m/60);
+  if(h<48) return h+'h'+String(m%60).padStart(2,'0')+'m';
+  return Math.floor(h/24)+'d'+(h%24)+'h';
+}
+function ago(sec){
+  if(sec<60) return '刚刚';
+  const m=Math.floor(sec/60); if(m<60) return m+' 分钟前';
+  const h=Math.floor(m/60); return h+' 小时前';
+}
+function hhmm(iso){ if(!iso) return ''; const d=new Date(new Date(iso).getTime()+8*3600e3); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); }
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ================= 角色与道具（原创像素小人：草帽农夫） ================= */
+const BASE={k:'#2b1a10',s:'#f4c28e',S:'#d8945a',h:'#6b3a1a',y:'#f2c84b',Y:'#c9962e',e:'#2b1a10',b:'#3d5a9e',B:'#2c4176',
+  t:'#a8682f',m:'#d5dde6',M:'#8a95a3',o:'#ffd84a',c:'#d39550',C:'#99602a',d:'#7a4a22',u:'#7dc95e',U:'#4f9a3a',w:'#fffaf0',x:'#c8321e',
+  n:'#d8693f',N:'#a8452a',D:'#3a1a08',F:'#ff8a2a',f:'#ffc23d',l:'#7a4520',L:'#5a3014',g:'#5fb33a',G:'#3f8a2a',p:'#f7d24a',P:'#c8761c',
+  W:'#f4edc8',V:'#c9c2a0',O:'#f5a623',q:'#d7eef7',v:'#4f8a3a',A:'#2f5a22'};
+const SHIRTS=['#d2553f','#3f7fc4','#e0a52e','#3fa39b','#c4573f','#5f8fd0'];
+function shade(hex,k=.72){const n=parseInt(hex.slice(1),16);return '#'+[16,8,0].map(s=>Math.round(((n>>s)&255)*k).toString(16).padStart(2,'0')).join('')}
+function palFor(i){const r=SHIRTS[i%SHIRTS.length];return {...BASE,r,R:shade(r)}}
+
+const HEAD=[
+ '...kkkkkk...',
+ '..kyyyyyyk..',
+ '.kyyyyyyyyk.',
+ 'kkYYYYYYYYkk',
+ '.khhssssssk.',
+ '.khsssssesk.',
+ '.khssssssssk',
+ '..ksssssSk..',
+];
+const BODY_A=[
+ '...kkkkkk...',
+ '..krrrrrrk..',
+ '.krrRrrrrrk.',
+ '.ksrrrrrrsk.',
+ '.kkbbbbbbkk.',
+ '..kbbkkbbk..',
+ '..kbbk.kbbk.',
+ '..kkk..kkk..',
+];
+const BODY_B=[
+ '...kkkkkk...',
+ '..krrrrrrk..',
+ '.krrRrrrrrk.',
+ '.ksrrrrrrsk.',
+ '.kkbbbbbbkk.',
+ '..kbbkkbbk..',
+ '.kbbk..kbbk.',
+ '.kkk....kkk.',
+];
+const STAND=[...HEAD,...BODY_A];
+const STAND_B=[...HEAD,...BODY_B];
+const SLEEP_A=[
+ '.............',
+ '...kkkkkk....',
+ '..kyyyyyyk...',
+ '.kyyyyyyyyk..',
+ 'kkYYYYYYYYkk.',
+ '.khhssssssk..',
+ '.khsssskksk..',
+ '.khssssssssk.',
+ '..kssssSSk...',
+ '..kkkkkkkk...',
+ '.krrrrrrrrk..',
+ '.krrRrrrrsrk.',
+ '.kkbbbbbbbbbk',
+ '.kbbbbbbbbkkk',
+ '.kkkkkkkkkk..',
+];
+const SLEEP_B=['.............',...SLEEP_A.slice(0,9),...SLEEP_A.slice(10)];
+const ANVIL=['kkkkkkkkk','kMMMMMMMk','.kkmmmkk.','..kmmmk..','.kkkkkkk.'];
+const CRATE=['kkkkkkkk','kcccccck','kCCCCCCk','kcccccck','kcccccck','kCCCCCCk','kkkkkkkk'];
+const SUN=['..OOOO..','.OooooO.','OooooooO','OooooooO','OooooooO','OooooooO','.OooooO.','..OOOO..'];
+const MOON=['..WWW...','.WWV....','WWV.....','WWV.....','WWV.....','WWWV....','.WWWWV..','..WWW...'];
+const CLOUD=['.....wwww.......','...wwwwwwww.....','.wwwwwwwwwwwww..','wwwwwwwwwwwwwwww','qqqqqqqqqqqqqqqq'];
+const SPROUT=['.g.g.','gGgGg','..G..','..G..'];
+const HERB=['.p...p.','pPp.pPp','.pG.Gp.','..GGG..','...G...'];
+const TENT=['.......k.......','......knk......','.....knnNk.....','....knnnNNk....','...knnnDNNNk...','..knnnnDDNNNk..','.knnnnDDDNNNNk.','knnnnnDDDDNNNNk','kkkkkkkkkkkkkkk'];
+const FIRE=[
+ ['....f....','...fF....','...fFf...','..fFoFf..','..FfofF..','..FFFFF..','.LllLllL.','llLlllLll'],
+ ['.....f...','....Ff...','...fFf...','..fFoFf..','..FFofF..','..FFFFF..','.LllLllL.','llLlllLll'],
+ ['.........','...f.f...','...fFf...','..fFooF..','..FfoFF..','..FFFFF..','.LllLllL.','llLlllLll'],
+];
+const HELPER=[['...g...','..gG...','.kkkkk.','kuuuuuk','kukuuku','kuuuuuk','.kkkkk.']];
+const BANG=['kkkkkkk','kwwxwwk','kwwxwwk','kwwxwwk','kwwwwwk','kwwxwwk','kkkkkkk','..kwk..','...k...'];
+const BOOK=['.kkkkkkkkk.','kvvvvvvvvwk','kvAAAAAvvwk','kvvvvvvvvwk','kvAAAvvvvwk','kvvvvvvvvwk','kvvvvvvvvwk','kvvvvvvvvwk','kAAAAAAAAwk','.kkkkkkkkk.'];
+const XBTN=['.kkkkkkkk.','kxxxxxxxxk','kxwxxxxwxk','kxxwxxwxxk','kxxxwwxxxk','kxxxwwxxxk','kxxwxxwxxk','kxwxxxxwxk','kxxxxxxxxk','.kkkkkkkk.'];
+const TREE=['...GGG...','..GgggG..','.GgggggG.','GgggggggG','GggPgggGG','.GgggggG.','..GGGGG..','....l....','....l....','...lll...'];
+const ENVEL=['kkkkkkkkk','kwkwwwkwk','kwwkwkwwk','kwwwkwwwk','kwwwwwwwk','kkkkkkkkk'];
+
+// 动作帧
+function actHoe(){
+  const mk=down=>{const c=cv(22,18);stamp(c,STAND,2,2);
+    if(!down){put(c,[[12,12],[13,11],[14,10],[15,9],[16,8],[17,7]],'t');put(c,[[17,5],[18,5],[18,6],[18,7]],'m');put(c,[[19,6],[19,7]],'M')}
+    else{put(c,[[13,13],[14,14],[15,15],[16,16]],'t');put(c,[[17,16],[17,17],[18,17]],'m');put(c,[[16,17]],'M');put(c,[[20,15],[21,14],[19,13]],'d')}
+    return rows(c)};
+  return [mk(false),mk(true)];
+}
+function actAnvil(){
+  const mk=down=>{const c=cv(24,18);stamp(c,STAND,2,2);stamp(c,ANVIL,14,13);
+    if(!down){put(c,[[12,12],[12,11],[12,10],[12,9]],'t');put(c,[[11,7],[12,7],[13,7],[11,8],[12,8],[13,8]],'M')}
+    else{put(c,[[13,13],[14,12]],'t');put(c,[[15,10],[16,10],[15,11],[16,11],[15,12],[16,12]],'M');put(c,[[18,11],[19,9],[17,9],[20,11]],'o')}
+    return rows(c)};
+  return [mk(false),mk(true)];
+}
+function actCarry(){
+  const mk=b=>{const c=cv(12,23);stamp(c,CRATE,2,0);stamp(c,b?STAND_B:STAND,0,7);put(c,[[1,6],[10,6]],'s');put(c,[[1,7],[10,7]],'k');return rows(c)};
+  return [mk(false),mk(true)];
+}
+
+function md(src){
+  const L=esc(src).split('\n');let out='',i=0;
+  const inline=s=>s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  while(i<L.length){
+    const l=L[i];
+    if(/^\s*\|/.test(l)){const t=[];while(i<L.length&&/^\s*\|/.test(L[i]))t.push(L[i++]);
+      const cells=r=>r.trim().replace(/^\||\|$/g,'').split('|').map(c=>inline(c.trim()));
+      const body=t.filter(r=>!/^\s*\|[\s:|-]+\|\s*$/.test(r));
+      out+='<table>'+body.map((r,k)=>'<tr>'+cells(r).map(c=>k?`<td>${c}</td>`:`<th>${c}</th>`).join('')+'</tr>').join('')+'</table>';continue}
+    if(/^\s*[-•]\s+/.test(l)){out+='<ul>';while(i<L.length&&/^\s*[-•]\s+/.test(L[i]))out+='<li>'+inline(L[i++].replace(/^\s*[-•]\s+/,''))+'</li>';out+='</ul>';continue}
+    if(/^\s*\d+\.\s+/.test(l)){out+='<ol>';while(i<L.length&&/^\s*\d+\.\s+/.test(L[i]))out+='<li>'+inline(L[i++].replace(/^\s*\d+\.\s+/,''))+'</li>';out+='</ol>';continue}
+    if(l.trim())out+='<p>'+inline(l)+'</p>';
+    i++;
+  }
+  return out;
+}
+
+/* ================= 追加道具 ================= */
+const FURNACE=[
+ ['..kkkkkkkkkk..','..kSSSSSSSSk..','.kSSsSSSSsSSk.','.kSSSSSSSSSSk.','kSSSkkkkkkSSSk','kSSkFfFfFFkSSk','kSSkfFoFfFkSSk','kSSkFFFFFFkSSk','kSSSkkkkkkSSSk','kSSSSSSSSSSSSk','kkkkkkkkkkkkkk'],
+ ['..kkkkkkkkkk..','..kSSSSSSSSk..','.kSSsSSSSsSSk.','.kSSSSSSSSSSk.','kSSSkkkkkkSSSk','kSSkfFfFffkSSk','kSSkFfoofFkSSk','kSSkFFfFFFkSSk','kSSSkkkkkkSSSk','kSSSSSSSSSSSSk','kkkkkkkkkkkkkk'],
+];
+const RACK=['k.....k','kmk.kmk','kmk.kmk','kmk.kmk','kMk.kMk','ktk.ktk','kkkkkkk','k.....k'];
+const PAL_X={...BASE,S:'#8e8a86',s:'#b3aea8',j:'#8fb4d4',J:'#4f7397',Q:'#4f9fd8'};
+const FLOWER_P=['#e8545a','#f7d24a','#7aa6e8','#f29ac0'];
+function actWater(){
+  const mk=pour=>{const c=cv(22,18);stamp(c,STAND,2,2);
+    put(c,[[12,12],[13,11],[14,11],[15,12]],'J');
+    for(let x=13;x<=16;x++)for(let y=12;y<=15;y++)c[y][x]='j';
+    put(c,[[13,12],[14,12],[15,12],[16,12]],'J');
+    if(!pour)put(c,[[17,13],[18,12],[19,11]],'J');
+    else{put(c,[[17,14],[18,15],[19,15]],'J');put(c,[[20,16],[19,17],[21,17],[20,14]],'Q')}
+    return rows(c)};
+  return [mk(false),mk(true)];
+}
+const ACTS=['hoe','anvil','carry','water'];
+const ACT_NAME={hoe:'锄地',anvil:'打铁',carry:'搬箱子',water:'浇花'};
+const GROUND={hoe:'g-field',anvil:'g-stone',carry:'g-boards',water:'g-garden'};
+
+/* ================= 角色分配：按会话稳定，存 localStorage ================= */
+const LS=localStorage;
+let CAST={};try{CAST=JSON.parse(LS.ccmonFarmCast||'{}')}catch(e){CAST={}}
+(function prune(){const lim=Date.now()-5*864e5;for(const k in CAST)if(!(CAST[k].t>lim))delete CAST[k]})();
+let castDirty=false;
+function hashStr(s){let h=2166136261;for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0}
+function castFor(sid,peers){
+  let c=CAST[sid];
+  if(!c){
+    const used=peers.filter(p=>p!==sid&&CAST[p]).map(p=>CAST[p]);
+    const pick=(n,key)=>{const cnt=Array(n).fill(0);used.forEach(u=>cnt[u[key]%n]++);const min=Math.min(...cnt);
+      const cand=[...Array(n).keys()].filter(i=>cnt[i]===min);return cand[hashStr(sid+key)%cand.length]};
+    c=CAST[sid]={a:pick(ACTS.length,'a'),s:pick(SHIRTS.length,'s'),t:Date.now()};castDirty=true;
+  }else if(Date.now()-c.t>36e5){c.t=Date.now();castDirty=true}
+  return c;
+}
+setInterval(()=>{if(castDirty){LS.ccmonFarmCast=JSON.stringify(CAST);castDirty=false}},3000);
+
+/* ================= 场景 ================= */
+const STXT={busy:'干活中',idle:'闲着',done:'刚收工',waiting:'等你回话',dead:'已离场',history:'已结束'};
+const SVERB={busy:'已经干了',idle:'已经闲了',done:'收工了',waiting:'已经等了',dead:'离开了',history:'结束于'};
+const TOD={busy:'day',waiting:'day',done:'dusk',idle:'night',dead:'gray',history:'gray'};
+function hills(seed){
+  let x=0,pts=['0% 100%'],r=seed%233280;
+  const rnd=()=>{r=(r*9301+49297)%233280;return r/233280};
+  let y=50,dir=rnd()>.5?-1:1;
+  while(x<100){pts.push(`${x}% ${y}%`);x+=1.2+rnd()*2.2;pts.push(`${Math.min(x,100)}% ${y}%`);
+    if(rnd()<.18)dir=-dir;y+=dir*(10+Math.round(rnd()*8));if(y<6){y=6;dir=1}if(y>78){y=78;dir=-1}}
+  pts.push('100% 100%');
+  return `clip-path:polygon(${pts.join(',')})`;
+}
+function stars(seed,n){
+  let r=seed%233280;const rnd=()=>{r=(r*9301+49297)%233280;return r/233280};
+  const a=[];for(let i=0;i<n;i++)a.push(`${Math.round(rnd()*1200)}px ${Math.round(rnd()*80)}px 0 ${rnd()>.7?'#fff6c8':'rgba(255,246,200,.6)'}`);
+  return `<i class="pos" style="left:0;top:0;width:2px;height:2px;box-shadow:${a.join(',')}"></i>`;
+}
+const WORKFILE={hoe:'working-wizard',anvil:'working-building',carry:'working-carrying',water:'working-sweeping'};
+const MINI={x:-4,y:4,w:20,h:13};
+const clawdHTML=(file,k,frame)=>Clawd.el(file,k,frame).outerHTML;
+// 干活姿势按场地固定；抛球 / 耳机 / 等你 / 打哈欠→打盹→睡死 都听 Clawd.pick 的
+function poseFor(s){
+  if(s.state==='history')return Clawd.F('sleeping');
+  return Clawd.pick({...s,group:s.state},Date.now()/1000,{work:[Clawd.F(WORKFILE[s.act]||'working-thinking')]});
+}
+// 总览里只画最近 10 分钟有动静的子代理；<8 秒的在走，其余趴着睡。历史上派过多少个只在详情里列
+const SUBRECENT=600;
+const recentSubs=s=>(s.subagents||[]).filter(a=>a.mtime&&Date.now()/1000-a.mtime<SUBRECENT).sort((a,b)=>b.mtime-a.mtime);
+function helpersHTML(s,k,pos){return `<span class="helpers" data-k="${k}" style="${pos}"></span>`}
+function fillHelpers(box,s){
+  if(!box)return;
+  const rec=recentSubs(s),live=rec.filter(isLive).length,m=Math.min(3,rec.length),k=+box.dataset.k||2;
+  const sig=m+'|'+(rec.length>3?rec.length:0);
+  if(box.dataset.sig!==sig){
+    box.dataset.sig=sig;let h='';
+    for(let i=0;i<m;i++)h+=`<span class="helper">${clawdHTML(Clawd.F('mini-sleep'),k,MINI)}</span>`;
+    if(rec.length>3)h+=`<span class="more">+${rec.length-3}</span>`;
+    box.innerHTML=h;
+  }
+  box.title=rec.length?`最近 10 分钟有 ${rec.length} 个小帮手，${live} 个在跑`:'';
+  box.querySelectorAll('.clawd').forEach((c,i)=>Clawd.set(c,Clawd.F(i<live?'mini-crabwalk':'mini-sleep')));
+  return live;
+}
+// s: {state, act, pal, subagents}；big = 详情肖像
+function sceneHTML(s,P,big){
+  const st=s.state,act=s.act,seed=hashStr(s.sid||'x');
+  const tod=TOD[st]||'gray';
+  const Pa=big?6:P, Ps=big?4:Math.max(2,P-1);
+  let h='<div class="sky"></div>';
+  if(tod==='night'||tod==='dusk')h+=stars(seed,tod==='night'?42:10);
+  if(tod==='day')h+=`<span class="pos" style="right:${big?'18px':'15%'};top:${big?14:10}px">${spr(SUN,BASE,Ps)}</span>`;
+  if(tod==='night')h+=`<span class="pos" style="right:${big?'22px':'15%'};top:${big?14:10}px">${spr(MOON,BASE,Ps)}</span>`;
+  if(tod==='day'&&!big){
+    h+=`<span class="pos cloud" style="left:${18+seed%20}%;top:14px">${spr(CLOUD,BASE,Ps)}</span>`;
+    h+=`<span class="pos cloud" style="left:${50+seed%15}%;top:30px;animation-duration:200s">${spr(CLOUD,BASE,Math.max(2,P-2))}</span>`;
+    h+=`<span class="pos cloud" style="left:112%;top:22px">${spr(CLOUD,BASE,Ps)}</span>`;
+  }
+  h+=`<div class="hills back" style="${hills(seed)}"></div><div class="hills" style="${hills(seed>>>3)}"></div><div class="ground ${GROUND[act]||'g-field'}"></div>`;
+  if(!big&&tod!=='gray'){
+    const tp=tod==='night'?{...BASE,g:'#21463a',G:'#163128',P:'#2a5644',l:'#2e2018'}:tod==='dusk'?{...BASE,g:'#6f9a44',G:'#4d7430',P:'#88b055',l:'#5a3014'}:{...BASE,g:'#4fa83a',G:'#2f7a2a',P:'#7cc95a'};
+    [[2,0],[5.5,1],[88,0],[93,1]].forEach(([x,sz])=>{h+=`<span class="pos" style="left:${x+(seed%2)*1.5}%;bottom:calc(var(--ground) - 4px)">${spr(TREE,tp,P+sz)}</span>`});
+  }
+  const feet=big?'calc(var(--ground) - 34px)':'calc(var(--ground) - 18px)';
+  const g0=`calc(var(--ground) - ${big?20:14}px)`;
+  // 每种活计的固定陈设（任何状态都在，入夜后变暗）——让每条田垄一眼可辨
+  if(!big){
+    if(act==='hoe'){
+      h+=`<div class="tilled" style="left:13%;width:31%"></div>`;
+      for(let k=0;k<6;k++)h+=`<span class="pos" style="left:${14+k*5}%;bottom:calc(var(--ground) - 20px)">${spr(k%3===2?SPROUT:HERB,BASE,Ps)}</span>`;
+      if(st==='busy')h+=`<div class="tilled" style="left:56%;width:9%;opacity:.85"></div>`;
+    }else if(act==='anvil'){
+      h+=`<span class="pos" style="left:15%;bottom:${g0}">${spr(FURNACE,PAL_X,P,{t:'1.8s'})}</span>`;
+      h+=`<span class="pos" style="left:23.5%;bottom:${g0}">${spr(RACK,BASE,P)}</span>`;
+    }else if(act==='carry'){
+      h+=`<span class="pos" style="left:12%;bottom:${g0}">${spr(CRATE,BASE,P)}</span><span class="pos" style="left:12%;bottom:calc(${g0} + ${7*P}px)">${spr(CRATE,BASE,P)}</span><span class="pos" style="left:calc(12% + ${8*P}px);bottom:${g0}">${spr(CRATE,BASE,P)}</span>`;
+      h+=`<span class="pos" style="left:74%;bottom:${g0}">${spr(CRATE,BASE,P)}</span>`;
+    }else if(act==='water'){
+      for(let k=0;k<7;k++)h+=`<span class="pos" style="left:${11+k*4}%;bottom:calc(var(--ground) - ${k%2?26:16}px)">${spr(HERB,{...BASE,p:FLOWER_P[(k+seed)%4]},Ps)}</span>`;
+      h+=`<div class="pond" style="left:73%;width:11%;bottom:calc(var(--ground) - 30px)"></div>`;
+    }
+  }
+  // 住户：Clawd。位置按场地固定，换状态不跳位；姿势由 poseFor() 决定，之后只用 Clawd.set 换
+  const k=big?6:(P>3?5:3);
+  const cx=big?'50%':({hoe:'52%',anvil:'47%',carry:'46%',water:'50%'}[act]||'50%');
+  const cb=big?'calc(var(--ground) - 36px)':`calc(var(--ground) - ${P>3?30:21}px)`;
+  if(st==='idle'){
+    const fx=`calc(${cx} + ${big?13*k:11*k}px)`,tx=`calc(${cx} + ${11*k+13*(big?5:P)}px)`;
+    h+=`<div class="glow" style="left:calc(${fx} - ${big?80:70}px);bottom:calc(var(--ground) - ${big?70:50}px);width:${big?220:200}px;height:${big?130:100}px"></div>`;
+    if(!big)h+=`<span class="pos" style="left:${tx};bottom:calc(var(--ground) - 12px)">${spr(TENT,BASE,P+1)}</span>`;
+    h+=`<span class="pos" style="left:${fx};bottom:calc(var(--ground) - ${big?26:16}px)">${spr(FIRE,BASE,big?5:P,{t:'1.8s'})}</span>`;
+  }
+  if(st==='done')h+=`<span class="bubble" style="left:calc(${cx} + ${9*k}px);bottom:calc(${cb} + ${13*k}px)">收工啦</span>`;
+  if(st==='waiting')h+=`<span class="scene-tag wait">停下来等你了</span>`;
+  if(st==='dead'||st==='history')h+=`<span class="scene-tag">${st==='history'?'这个会话已经结束':'进程已退出'}</span>`;
+  h+=`<span class="pos actor" style="left:calc(${cx} - ${16*k}px);bottom:${cb}">${clawdHTML(poseFor(s),k)}</span>`;
+  h+=helpersHTML(s,big||P>3?2:1,big?'left:8px;bottom:4px':`right:calc(100% - ${cx} + ${10*k}px);bottom:calc(${cb} + ${k}px)`);
+  return `<div class="scene ${tod}" style="${big?'--ground:30%':''}">${h}</div>`;
+}
+
+/* ================= 状态 ================= */
+const $=s=>document.querySelector(s);
+const Q=new URLSearchParams(location.search);
+const DEMO=Q.get('demo')==='1';
+const S={dirty:new Set(),data:null,online:[],lanes:new Map(),dense:null,fails:0,lastOk:0,prevWaiting:null,
+  sound:LS.ccmonSound==='1',audio:null,open:null,es:null,tools:{},follow:true,curActs:null,sideSig:'',hudSig:'',logSig:''};
+const nowS=()=>Date.now()/1000;
+const fmtClock=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+function agoE(epoch){return epoch?ago(nowS()-epoch):''}
+const SUBLIVE=8;
+const isLive=a=>a&&a.mtime&&nowS()-a.mtime<SUBLIVE;
+
+/* ---------- 调试：?demo=1 把真实会话改写成各种状态；&n=0..9 改条数；&offline=1 模拟断线 ---------- */
+function demoize(d){
+  const items=d.groups.flatMap(g=>g.items);
+  const n=Q.has('n')?+Q.get('n'):Math.max(items.length,5);
+  const STS=['busy','waiting','idle','done','busy','dead','busy','idle','busy'];
+  const out=[];
+  for(let i=0;i<n&&items.length;i++){
+    const b=items[i%items.length];
+    const c=i<items.length?{...b}:{...b,sid:b.sid+'~demo'+i,realSid:b.sid,pid:(b.pid||0)+(i+1)*100000,name:(b.name||'')+'·'+i};
+    c.group=STS[i%STS.length];
+
+    if(Q.get('st'))c.group=Q.get('st');
+    if(c.subagents&&c.subagents.length)c.subagents=c.subagents.map((a,k)=>({...a,mtime:Q.get('calm')==='1'?nowS()-120:(i===0&&k<2?nowS():a.mtime)}));
+    out.push(c);
+  }
+  const groups=['waiting','busy','done','idle','dead'].map(k=>({key:k,items:out.filter(x=>x.group===k)}));
+  return {...d,groups};
+}
+
+/* ================= 轮询 ================= */
+async function poll(){
+  try{
+    if(DEMO&&Q.get('offline')==='1')throw new Error('演示断线');
+    const r=await fetch('/api/sessions',{cache:'no-store'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(DEMO&&Q.get('offline')==='after'&&S.data)throw new Error('演示断线');
+    let d=await r.json();
+    const evs=window.CCAlert?CCAlert.observe(d):[];   // 传原始返回，别传 demo 改写过的
+    if(DEMO)d=demoize(d);
+    S.data=d;S.fails=0;S.lastOk=Date.now();
+    apply();
+    evs.forEach(flashEvent);
+  }catch(e){S.fails++;S.lastErr=e.message}
+  connUI();
+  setTimeout(poll,1500);
+}
+function connUI(){
+  const off=S.fails>=2||(S.fails>=1&&!S.data);
+  document.body.classList.toggle('offline',off);
+  const c=$('#conn');
+  if(off){
+    c.className='conn bad';c.textContent='连不上台式机';
+    $('#offNote').textContent=S.lastOk?`连不上台式机，正在重试（最后一次更新 ${fmtClock(new Date(S.lastOk))}）`:'连不上台式机，正在重试';
+    c.title=S.lastErr||'';
+    if(!S.data){$('#hudLine').textContent='还没连上台式机';$('#hudSub').textContent='页面会自己重试，连上后田垄就出来了'}
+  }else if(S.data&&S.data.err){
+    c.className='conn bad';c.textContent='后端读状态出错';c.title=S.data.err;
+  }else{c.className='conn';c.textContent=DEMO?'演示模式':'实时';c.title=''}
+}
+
+function apply(){
+  const d=S.data;
+  const on=[];
+  d.groups.forEach(g=>g.items.forEach(it=>on.push({...it,state:g.key})));
+  on.sort((a,b)=>((a.pid??Infinity)-(b.pid??Infinity))||String(a.sid).localeCompare(b.sid));
+  const sids=on.map(x=>x.sid);
+  on.forEach(s=>{const c=castFor(s.sid,sids);s.act=ACTS[c.a];s.pal=palFor(c.s)});
+  S.online=on;
+  renderLanes();renderHUD();renderLog();alertWaiting();
+  if(S.open)refreshDetail();
+}
+
+/* ================= 田垄（增量更新，不整页重建） ================= */
+function laneTitle(s){return s.title||s.prompt||s.name||String(s.sid).slice(0,8)}
+function createLane(s){
+  const el=document.createElement('article');
+  el.className='lane frame';el.tabIndex=0;
+  el.innerHTML=`<div class="sign">
+      <div class="sign-top"><span class="chip"></span><span class="dur"><small></small><span class="dv"></span></span></div>
+      <h2 class="title"></h2>
+      <div class="meta"><span class="name"></span><span class="cwd"></span></div>
+    </div><div class="divider"></div><div class="scene"></div>`;
+  const L={el,sid:s.sid,chip:el.querySelector('.chip'),verb:el.querySelector('.dur small'),dv:el.querySelector('.dv'),
+    title:el.querySelector('.title'),name:el.querySelector('.name'),cwd:el.querySelector('.cwd'),sig:'',st:'',durStr:'',P:0};
+  el.onclick=()=>openDetail(L.sid,null);
+  el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDetail(L.sid,null)}};
+  return L;
+}
+function setText(node,v){if(node.textContent!==v)node.textContent=v}
+function updateLane(L,s,P){
+  L.s=s;
+  if(L.st!==s.state){L.el.classList.remove('st-'+L.st);L.el.classList.add('st-'+s.state);L.st=s.state;
+    setText(L.chip,STXT[s.state]||s.state);setText(L.verb,SVERB[s.state]||'');}
+  setText(L.title,laneTitle(s));
+  setText(L.cwd,s.cwd||'');
+  L.el.setAttribute('aria-label',`${s.name||''} ${STXT[s.state]||''}`);
+  const sig=[s.state,s.act,s.pal.r,P].join('|');
+  if(sig!==L.sig){
+    L.sig=sig;
+    const t=document.createElement('template');t.innerHTML=sceneHTML(s,P,false);
+    const sc=t.content.firstChild;L.el.replaceChild(sc,L.el.querySelector('.scene'));
+    L.durStr='';L.liveN=-1;
+  }
+  if(L.P!==P){L.P=P;L.durStr=''}
+  tickLane(L);
+}
+function tickLane(L){
+  const s=L.s;
+  const d=dur(nowS()-(s.since||nowS()));
+  if(d!==L.durStr){L.durStr=d;L.dv.innerHTML=ptext(d,L.P>3?5:3,'#4a2410','#e6ae66')}
+  const live=fillHelpers(L.el.querySelector('.helpers'),s)||0;
+  const nm=(s.name||'')+'|'+live;
+  if(L.name.dataset.v!==nm){L.name.dataset.v=nm;L.name.innerHTML=esc(s.name||'')+(live?`<span class="subn">${live} 个小帮手在跑</span>`:'')}
+  Clawd.set(L.el.querySelector('.actor .clawd'),poseFor(s));
+}
+// 提醒事件（alert.js 给的）：那条田垄冒个小气泡，几秒后自己消失
+function flashEvent(e){
+  if(e.type==='done'&&e.quiet)return;
+  const L=S.lanes.get(e.sid);if(!L)return;
+  const a=L.el.querySelector('.actor');if(!a)return;
+  const b=document.createElement('span');b.className='bubble evbub'+(e.type==='wait'?' w':'');
+  b.textContent=e.type==='wait'?'等你啦':'干完啦';a.append(b);
+  L.el.classList.add('flash');setTimeout(()=>{b.remove();L.el.classList.remove('flash')},6000);
+}
+function emptyHTML(){
+  const s={sid:'empty',state:'idle',act:'hoe',pal:palFor(0),subagents:[]};
+  return `<article class="lane frame empty-farm"><div class="sign"><h2>田里现在没人</h2><p>台式机上开一个 claude 会话，Clawd 就会出现在这里干活。已经结束的会话在右下角的收成日志里。</p></div><div class="divider"></div>
+    <div class="scene night"><div class="sky"></div>${stars(7,40)}<span class="pos" style="right:15%;top:12px">${spr(MOON,BASE,4)}</span><div class="hills back" style="${hills(11)}"></div><div class="hills" style="${hills(29)}"></div><div class="ground g-field"></div>
+    <span class="pos" style="left:63%;bottom:calc(var(--ground) - 12px)">${spr(TENT,BASE,6)}</span><span class="pos" style="left:56%;bottom:calc(var(--ground) - 16px)">${spr(FIRE,BASE,5,{t:'1.8s'})}</span><span class="pos" style="left:calc(56% - 190px);bottom:calc(var(--ground) - 24px)">${clawdHTML(Clawd.F('sleeping'),5)}</span></div></article>`;
+}
+function renderLanes(){
+  const box=$('#lanes'),list=S.online,n=list.length;
+  const dense=n>3,P=dense?3:5;
+  box.classList.toggle('dense',dense);box.classList.toggle('many',n>6);
+  if(!n){
+    S.lanes.clear();
+    if(!box.querySelector('.empty-farm'))box.innerHTML=emptyHTML();
+    return;
+  }
+  const ef=box.querySelector('.empty-farm');if(ef)ef.remove();
+  const keep=new Set(list.map(s=>s.sid));
+  for(const [k,L] of S.lanes)if(!keep.has(k)){L.el.remove();S.lanes.delete(k)}
+  list.forEach((s,i)=>{
+    let L=S.lanes.get(s.sid);
+    if(!L){L=createLane(s);S.lanes.set(s.sid,L)}
+    updateLane(L,s,P);
+    const at=box.children[i];
+    if(at!==L.el)box.insertBefore(L.el,at||null);
+  });
+}
+
+/* ================= HUD / 时钟 / 标题 ================= */
+const MOON_IDLE={...BASE,W:'#3c5478',V:'#26365f'};
+function renderHUD(){
+  const cnt={busy:0,idle:0,waiting:0,done:0,dead:0};S.online.forEach(s=>cnt[s.state]=(cnt[s.state]||0)+1);
+  const rest=cnt.idle+cnt.done;
+  const sig=JSON.stringify(cnt)+S.online.map(s=>s.state).join(',');
+  if(sig!==S.hudSig){
+    S.hudSig=sig;
+    const parts=[];
+    if(cnt.waiting)parts.push(`<span class="w">${spr(BANG,BASE,3)}</span><span class="w">${cnt.waiting} 个在等你</span>`);
+    parts.push(`${spr(SUN,BASE,3)}<span>${cnt.busy} 个在干活</span>`);
+    parts.push(`${spr(MOON,MOON_IDLE,3)}<span>${rest} 个闲着</span>`);
+    $('#hudLine').innerHTML=S.online.length?parts.join('<span class="sep">/</span>'):'<span>田里现在没人</span>';
+    $('#hudSub').textContent=`${S.online.length} 个会话在线${cnt.dead?` · ${cnt.dead} 个已离场`:''} · 白天的田垄在干活，入夜的停下来了 · 点一条看它最近在做什么${DEMO?' · 演示模式（?demo=1）':''}`;
+    $('#tokens').innerHTML=S.online.slice(0,6).map(s=>({busy:spr(SUN,BASE,2),waiting:spr(BANG,BASE,2),idle:spr(MOON,MOON_IDLE,2),done:spr(MOON,{...BASE,W:'#c46a12',V:'#8a4a1c'},2),dead:spr(MOON,{...BASE,W:'#9a9088',V:'#6d645c'},2)})[s.state]||'').join('')+(S.online.length>6?`<span style="font-size:12px;font-weight:700">+${S.online.length-6}</span>`:'');
+  }
+}
+let clkStr='';
+function tickClock(){
+  const d=new Date();
+  const t=fmtClock(d);
+  if(t!==clkStr){clkStr=t;$('#clkTime').innerHTML=ptext(t,5,'#4a2410','#e6ae66');
+    $('#clkDate').textContent=`周${'日一二三四五六'[d.getDay()]} · ${d.getMonth()+1}月${d.getDate()}日`}
+}
+function alertWaiting(){
+  const w=new Set(S.online.filter(s=>s.state==='waiting').map(s=>s.sid));
+  const fresh=S.prevWaiting?[...w].filter(x=>!S.prevWaiting.has(x)):[];
+  S.prevWaiting=w;
+  document.title=w.size?`▲ ${w.size} 个等你处理 · 会话农场`:'会话农场';
+}
+
+/* ================= 提醒音 ================= */
+// 声音和标签页小图标都交给共用的 /assets/ccmon/alert.js
+function soundUI(){const on=!!(window.CCAlert&&CCAlert.soundOn());const b=$('#snd');b.classList.toggle('on',on);
+  b.innerHTML=`${spr(['..kk..','.kook.','.kook.','kooook','kkkkkk','..kk..'],BASE,3)}提醒音 <span class="st">${on?'开':'关'}</span>`}
+$('#snd').onclick=()=>{if(window.CCAlert)CCAlert.setSound(!CCAlert.soundOn());soundUI()};
+
+/* ================= 收成日志 ================= */
+function cleanTitle(t){const m=/^\s*\[([\w.-]+)\]\s*([\s\S]*)$/.exec(t||'');return m?{role:m[1],text:m[2]}:{role:null,text:t||''}}
+// 标题：[role] 前缀拆成小标签；空的退回 prompt，再退回 sid 前 8 位
+function titleParts(it){const c=cleanTitle(it.title||it.prompt||'');if(!c.text)c.text=it.name||String(it.sid||'').slice(0,8);return c}
+const titleHTML=c=>(c.role?`<span class="role">${esc(c.role)}</span>`:'')+esc(c.text);
+function renderLog(){
+  const H=S.data.history||[];
+  const sig=H.map(h=>h.sid+(h.title||'')).join('|');
+  if(sig===S.logSig){$('#log').querySelectorAll('.log-ago').forEach((n,i)=>H[i]&&setText(n,agoE(H[i].mtime)));return}
+  S.logSig=sig;
+  const lt=H[0]?titleParts(H[0]):null;
+  $('#logbtn').innerHTML=`${spr(BOOK,BASE,4)}<span class="lt"><b>收成日志 · ${H.length}</b><span>${lt?'最近：'+esc(lt.text):'今天还没有收工的会话'}</span></span>`;
+  $('#log').innerHTML=`<div class="log-head"><h3>收成日志</h3><span>最近 24 小时结束的 ${H.length} 个会话 · 点开看记录</span></div>
+    <div class="log-list">${H.map(h=>{const c=titleParts(h);return `
+      <div class="log-row" data-sid="${esc(h.sid)}"><span class="log-ago">${esc(agoE(h.mtime))}</span>
+        <div style="min-width:0"><div class="log-t">${titleHTML(c)}</div>
+        <div class="log-c">${esc(h.cwd)}</div></div></div>`}).join('')||'<div class="nodata" style="padding:30px">还没有</div>'}</div>`;
+}
+$('#logbtn').onclick=e=>{e.stopPropagation();document.body.classList.toggle('log-open')};
+$('#log').addEventListener('click',e=>{const r=e.target.closest('.log-row');if(r){document.body.classList.remove('log-open');openDetail(r.dataset.sid,null)}});
+
+/* ================= 主题切换 ================= */
+document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>{LS.ccmonTheme=b.dataset.theme;location.href='/'+b.dataset.theme+location.hash});
+
+/* ================= 详情：实时时间线 ================= */
+const feed=$('#feed');
+function findItem(sid){
+  if(!S.data)return null;
+  const o=S.online.find(x=>x.sid===sid);if(o)return o;
+  const h=(S.data.history||[]).find(x=>x.sid===sid);
+  if(h){const c=castFor(h.sid,[]);return {...h,state:'history',act:ACTS[c.a],pal:palFor(c.s)}}
+  return null;
+}
+function md2(src){
+  return String(src??'').split('```').map((p,i)=>i%2?`<pre class="code">${esc(p.replace(/^[^\n]*\n/,''))}</pre>`:md(p)).join('');
+}
+function parsePrompt2(t){
+  t=String(t||'').replace(/^\s*Another Claude session sent a message:\s*/,'');
+  const m=/<teammate-message\s+([^>]*)>([\s\S]*?)(<\/teammate-message>|$)/.exec(t);
+  if(!m)return {from:'你',you:true,sum:null,body:t};
+  const attr=k=>{const r=new RegExp(k+'="([^"]*)"').exec(m[1]);return r?r[1]:''};
+  let body=m[2].trim(),sum=attr('summary');
+  if(body.startsWith('{')){
+    try{const j=JSON.parse(body);sum=j.type==='idle_notification'?'待命通知':(j.type||sum);body=j.result||j.message||body}
+    catch(e){const r=/"result":"([\s\S]*)/.exec(body);sum='待命通知';if(r)body=r[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/"}\s*$/,'')}
+  }
+  return {from:attr('teammate_id')||'队友',you:false,sum,body};
+}
+const rawBtn=ln=>`<button class="raw" data-ln="${ln}" title="看这一行的原始 JSON">{ }</button>`;
+const cutLnk=e=>e.cut?`<button class="lnk" data-ln="${e.ln}">内容太长被截断了，看全文</button>`:'';
+function node(html){const t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild}
+function hm(ts){if(!ts)return '';const d=new Date(ts);return isNaN(d)?'':fmtClock(d)}
+
+const TOOL_KEYS=['command','file_path','notebook_path','path','pattern','url','query','skill','description','prompt','subject','taskId','task_id','to'];
+function toolSummary(name,inp){
+  if(!inp||typeof inp!=='object')return '';
+  if(name==='Bash'&&inp.command)return inp.description||inp.command;
+  if((name==='Edit'||name==='Write'||name==='Read'||name==='MultiEdit')&&inp.file_path)return inp.file_path.split('/').pop();
+  if(name==='SendMessage')return '→ '+(inp.to||'')+(inp.summary?'　'+inp.summary:'');
+  if((name==='Agent'||name==='Task')&&inp.description)return `[${inp.subagent_type||'agent'}] ${inp.description}`;
+  if(name==='TodoWrite'&&Array.isArray(inp.todos)){const doing=inp.todos.find(t=>t.status==='in_progress');
+    return `${inp.todos.filter(t=>t.status==='completed').length}/${inp.todos.length} 完成`+(doing?' · 正在：'+(doing.activeForm||doing.content):'')}
+  if(name==='AskUserQuestion'&&Array.isArray(inp.questions))return inp.questions.map(q=>q.question).join(' / ');
+  for(const k of TOOL_KEYS)if(typeof inp[k]==='string')return inp[k];
+  const s=JSON.stringify(inp);return s.length>160?s.slice(0,160)+'…':s;
+}
+function inputHtml(name,inp){
+  if(inp&&(name==='Edit'||name==='MultiEdit')){
+    const edits=name==='MultiEdit'?(inp.edits||[]):[inp];
+    const body=edits.map(e=>String(e.old_string??'').split('\n').map(l=>`<span class="del">- ${esc(l)}</span>`).join('\n')+'\n'+
+      String(e.new_string??'').split('\n').map(l=>`<span class="add">+ ${esc(l)}</span>`).join('\n')).join('\n⋯\n');
+    return `<div class="cp">${esc(inp.file_path)}${inp.replace_all?'（全部替换）':''}</div><pre class="diff">${body}</pre>`;
+  }
+  if(inp&&name==='Write'&&typeof inp.content==='string')return `<div class="cp">${esc(inp.file_path)}</div><pre>${esc(inp.content)}</pre>`;
+  if(inp&&name==='TodoWrite'&&Array.isArray(inp.todos))return `<pre class="todo">${inp.todos.map(t=>{const c=t.status==='completed'?'done':t.status==='in_progress'?'doing':'';
+    const m=t.status==='completed'?'[x]':t.status==='in_progress'?'[~]':'[ ]';return `<span class="${c}">${m} ${esc(t.content)}</span>`}).join('\n')}</pre>`;
+  if(inp&&name==='Bash'&&typeof inp.command==='string')return `<pre>$ ${esc(inp.command)}</pre>`;
+  return `<pre>${esc(JSON.stringify(inp,null,2))}</pre>`;
+}
+const noAnsi=s=>String(s??'').replace(/\x1b\[[0-9;?]*[A-Za-z]/g,'');
+const ICON_TOOL=['kkkk','kmmk','kMMk','kkkk'],ICON_THINK=['.kk.','kwwk','kwwk','.kk.'];
+const THINK_PAL={...BASE,w:'#9fb4cc',k:'#3c5478'};
+let bodySeq=0;
+
+function acts(){
+  if(!S.curActs||S.curActs.parentNode!==feed){S.curActs=node('<div class="acts"></div>');feed.append(S.curActs)}
+  S.dirty.add(S.curActs);
+  return S.curActs;
+}
+// 一串超过 6 个胶囊：只露前 2 个 + 「… 还有 N 个」+ 最后 3 个；新事件并进来时重新算
+function compactActs(row){
+  const caps=[...row.children].filter(n=>n.classList.contains('cap'));
+  let more=row.querySelector(':scope > .actmore');
+  const fold=!row.dataset.open&&caps.length>6;
+  caps.forEach((c,i)=>{const hide=fold&&i>=2&&i<caps.length-3;c.classList.toggle('hid',hide);
+    const b=c.dataset.b&&document.getElementById(c.dataset.b);if(b)b.classList.toggle('hid',hide)});
+  if(!fold){if(more)more.remove();return}
+  if(!more){more=node('<button class="actmore"></button>');more.onclick=()=>{row.dataset.open='1';compactActs(row)}}
+  more.textContent=`… 还有 ${caps.length-5} 个`;
+  if(more.nextSibling!==caps[2])row.insertBefore(more,caps[2]);
+}
+function flush(){S.curActs=null}
+function render(e){
+  switch(e.k){
+    case 'prompt':{
+      flush();const p=parsePrompt2(e.text);const long=p.body.length>160;
+      feed.append(node(`<div class="ev letter${p.you?' you':''}${long?'':' full'}">${rawBtn(e.ln)}
+        <div class="letter-h">${spr(ENVEL,{...BASE,w:p.you?'#e6f2d8':'#fff3d6'},2)}<span class="letter-from">${p.you?'你说':'来信 · '+esc(p.from)}</span>
+        <span class="letter-sum">${esc(p.sum||'')}</span><span class="time">${hm(e.ts)}</span></div>
+        <div class="letter-body${long?' long':''}"><div class="md">${md2(p.body)}</div></div>
+        ${long?'<button class="more">展开全文</button>':''}${cutLnk(e)}</div>`));
+      return;}
+    case 'text':{
+      flush();
+      const it=findItem(S.open.sid);const pal=it?it.pal:palFor(0);
+      feed.append(node(`<div class="ev reply"><div class="ava"></div><div class="reply-b">${rawBtn(e.ln)}<div class="reply-h"><b>${esc(S.open.agent?'帮手':(it&&it.name)||'Clawd')}</b><span class="time">${hm(e.ts)}</span></div><div class="md">${md2(e.text)}</div>${cutLnk(e)}</div></div>`));
+      return;}
+    case 'think':{
+      const id='b'+(++bodySeq);const a=acts();
+      a.append(node(`<button class="cap think" data-b="${id}">${spr(ICON_THINK,THINK_PAL,2)}<span class="nm">思考</span><span class="ds">${esc(String(e.text||'').trim().slice(0,30))}…</span></button>`));
+      a.append(node(`<div class="think-body" id="${id}">${esc(String(e.text||'').trim())}${e.cut?`<br>${cutLnk(e)}`:''}</div>`));
+      return;}
+    case 'tool':{
+      const id='b'+(++bodySeq);const a=acts();const sum=toolSummary(e.name,e.input);
+      const cap=node(`<button class="cap" data-b="${id}" title="${esc(sum)}">${spr(ICON_TOOL,BASE,2)}<span class="nm">${esc(e.name)}</span><span class="ds">${esc(sum)}</span><span class="stt run">进行中</span></button>`);
+      const body=node(`<div class="tbody" id="${id}"><div class="sec"><div class="cp">参数 <button class="lnk" data-ln="${e.ln}">原始 JSON</button></div>${inputHtml(e.name,e.input)}</div></div>`);
+      a.append(cap,body);S.tools[e.id]={cap,body,done:false};
+      return;}
+    case 'result':{
+      const t=S.tools[e.id];const text=noAnsi(e.text);
+      const extra=(e.file?`<button class="lnk" data-file="${esc(e.file)}">输出太大已落盘，看完整输出</button>`:'')+(e.cut?`<button class="lnk" data-ln="${e.ln}">已截断（共 ${e.len} 字符），看全文</button>`:'');
+      const sec=`<div class="sec"><div class="cp">结果${e.err?'（出错）':''} ${extra}</div><pre>${esc(text)}</pre></div>`;
+      if(!t){const id='b'+(++bodySeq);const a=acts();
+        a.append(node(`<button class="cap${e.err?' err':''}" data-b="${id}">${spr(ICON_TOOL,BASE,2)}<span class="nm">结果</span><span class="ds">${esc(text.split('\n')[0].slice(0,60))}</span></button>`),node(`<div class="tbody" id="${id}">${sec}</div>`));return}
+      t.done=true;t.body.insertAdjacentHTML('beforeend',sec);
+      const st=t.cap.querySelector('.stt');st.className='stt '+(e.err?'err':'ok');st.textContent=e.err?'出错':'完成';
+      if(e.err)t.cap.classList.add('err');
+      return;}
+    case 'meta':case 'att':{
+      const opt=!(e.k==='meta'&&e.show);
+      const n=node(`<div class="ev note meta${opt?' feed-meta':''}">${rawBtn(e.ln)}<b>${esc(e.label||e.k)}</b><span class="time">${hm(e.ts)}</span>${e.text?`<div class="bd">${esc(e.text)}</div>`:''}${cutLnk(e)}</div>`);
+      if(opt){feed.append(n);if(S.curActs)feed.append(S.curActs)}else{flush();feed.append(n)}
+      return;}
+    case 'sys':{
+      flush();
+      if(e.label==='away_summary')feed.append(node(`<div class="note"><b>你离开时的小结</b>${esc(e.text)}</div>`));
+      else feed.append(node(`<div class="sysl">${esc(e.text)}${e.ts?' · '+hm(e.ts):''}</div>`));
+      return;}
+    case 'title':
+      if(!S.open.agent&&e.text)setTitle({title:e.text});
+      return;
+  }
+}
+function atBottom(){return feed.scrollHeight-feed.scrollTop-feed.clientHeight<120}
+function addEvents(evs){
+  const b=atBottom();
+  S.dirty=new Set();
+  for(const e of evs){try{render(e)}catch(err){console.error(err)}}
+  S.dirty.forEach(compactActs);
+  if(S.follow&&(b||evs.length>50))feed.scrollTop=feed.scrollHeight;
+  toolStatus();linkAgents();
+}
+function toolStatus(){
+  const it=findItem(S.open&&S.open.sid);if(!it)return;
+  const waiting=it.state==='waiting'&&!S.open.agent;
+  const busy=it.state==='busy'||!!S.open.agent;
+  for(const id in S.tools){const t=S.tools[id];if(t.done)continue;const st=t.cap.querySelector('.stt');
+    st.className='stt '+(waiting?'wait':busy?'run':'');st.textContent=waiting?'等你授权':busy?'进行中':'没有结果'}
+}
+function linkAgents(){
+  const it=findItem(S.open&&S.open.sid);if(!it||S.open.agent)return;
+  for(const a of it.subagents||[]){const t=a.toolUseId&&S.tools[a.toolUseId];
+    if(!t||t.body.querySelector('[data-agent]'))continue;
+    t.body.insertAdjacentHTML('afterbegin',`<button class="lnk" data-agent="${esc(a.id)}">打开这个帮手自己的时间线 →</button>`);
+    t.cap.querySelector('.nm').insertAdjacentHTML('afterend','<span class="stt ok">帮手</span>');}
+}
+function setTitle(it){const h=titleHTML(titleParts(it));const n=$('#dTitle');if(n.dataset.h!==h){n.dataset.h=h;n.innerHTML=h}}
+function openStream(){
+  if(S.es)S.es.close();
+  const o=S.open;S.tools={};flush();S.follow=true;
+  feed.innerHTML='<div class="nodata">正在把记录翻出来…</div>';
+  const it=findItem(o.sid);
+  const qs=new URLSearchParams({sid:(it&&it.realSid)||o.sid});
+  if(o.agent)qs.set('agent',o.agent);if(o.all)qs.set('all','1');
+  const es=S.es=new EventSource('/api/stream?'+qs);let got=false;
+  es.addEventListener('init',ev=>{
+    got=true;const d=JSON.parse(ev.data);
+    feed.innerHTML='';S.tools={};flush();setStat('');
+    if(d.skipped){const m=node(`<button class="loadmore">更早还有 ${d.skipped} 条，全部加载</button>`);m.onclick=()=>{S.open.all=true;openStream()};feed.append(m)}
+    if(d.title&&!o.agent)setTitle({title:d.title});
+    S.follow=true;addEvents(d.events);
+    if(!d.events.length)feed.append(node('<div class="nodata">（这里还什么都没有）</div>'));
+    feed.scrollTop=feed.scrollHeight;
+  });
+  es.addEventListener('more',ev=>addEvents(JSON.parse(ev.data).events));
+  es.addEventListener('reset',()=>openStream());
+  es.onerror=()=>{if(S.es!==es)return;setStat(got?'实时流断开，自动重连中…':'暂时拿不到这个会话的记录，重试中…',true)};
+}
+function setStat(t,bad){const n=$('#dStat');n.textContent=t?' · '+t:'';n.className='d-stat'+(bad?' bad':'')}
+
+/* ---------- 侧栏 + 头部 ---------- */
+function refreshDetail(){
+  const o=S.open;if(!o)return;
+  const it=findItem(o.sid);
+  const sub=it&&o.agent?(it.subagents||[]).find(a=>a.id===o.agent):null;
+  if(o.agent){
+    $('#dKicker').textContent='帮手（子代理）的时间线';
+    const h=`<button class="back" data-back="1">← 主会话</button>${esc(sub?`${sub.type||'agent'} · ${sub.desc||''}`:o.agent)}`;
+    if($('#dTitle').dataset.v!==h){$('#dTitle').dataset.v=h;delete $('#dTitle').dataset.h;$('#dTitle').innerHTML=h}
+  }else{
+    $('#dKicker').textContent=it&&it.state==='history'?'已结束的会话 · 由旧到新':'实时时间线 · 由旧到新';
+    if($('#dTitle').dataset.v){delete $('#dTitle').dataset.v;setTitle(it||{sid:o.sid})}
+    else if(it&&!$('#dTitle').textContent)setTitle(it);
+  }
+  const ban=$('#dBanner');
+  if(it&&it.state==='waiting'&&!o.agent){ban.textContent=`它停下来等你了（${it.label||'等你回话'}）—— 到台式机上处理一下`;ban.classList.add('show')}else ban.classList.remove('show');
+  if(!it){$('#dName').textContent=o.sid.slice(0,8);return}
+  const subs=it.subagents||[];
+  const sig=[it.sid,it.state,it.act,it.pal.r,Math.min(3,subs.length),subs.length].join('|');
+  if(sig!==S.sideSig){
+    S.sideSig=sig;
+    $('#dPortrait').innerHTML=sceneHTML(it,4,true);
+    setText($('#dName'),it.name||String(it.cwd||'').split('/').pop()||String(it.sid).slice(0,8));
+  }
+  const subHTML=subs.length?`<div class="subs">${subs.map(a=>`<button class="subrow${o.agent===a.id?' sel':''}" data-agent="${esc(a.id)}" title="${esc(a.desc)}"><span class="helper">${clawdHTML(Clawd.F('mini-sleep'),1,MINI)}</span><span class="tx"><span class="tp">${esc(a.type||'agent')}</span> ${esc(a.desc||'')}</span><span class="lv" data-mt="${a.mtime||0}"></span></button>`).join('')}</div>`:'<dd>没有</dd>';
+  const fs=$('#dFacts');
+  const fsig=sig+'|'+(it.cwd||'')+'|'+o.agent+'|'+subs.map(a=>a.id+a.desc).join(',');
+  if(fs.dataset.v!==fsig){
+    fs.dataset.v=fsig;fs.className='facts st-'+it.state;
+    fs.innerHTML=`<div class="row1"><span class="chip">${STXT[it.state]||it.state}</span><span class="dur"><small>${SVERB[it.state]||''}</small><span class="dv" id="dDur"></span></span></div>
+      <div class="fact"><dt>项目目录</dt><dd class="mono">${esc(it.cwd||'')}</dd></div>
+      <div class="fact"><dt>最后动静</dt><dd id="dAgo"></dd></div>
+      ${it.pid?`<div class="fact"><dt>进程</dt><dd class="mono">pid ${it.pid}${it.label?' · '+esc(it.label):''}</dd></div>`:''}
+      <div class="fact"><dt>帮手（子代理）${subs.length?' · '+subs.length:''}</dt>${subHTML}</div>`;
+    S.dDur='';
+  }
+  tickDetail();toolStatus();linkAgents();
+}
+function tickDetail(){
+  const o=S.open;if(!o)return;const it=findItem(o.sid);if(!it)return;
+  const dd=$('#dDur');
+  if(dd){const d=it.state==='history'?null:dur(nowS()-(it.since||nowS()));
+    if(it.state==='history'){setText(dd,agoE(it.mtime))}else if(d!==S.dDur){S.dDur=d;dd.innerHTML=ptext(d,4,'#4a2410','#e6ae66')}}
+  const ag=$('#dAgo');if(ag)setText(ag,agoE(it.mtime)||'—');
+  document.querySelectorAll('#dFacts .subrow').forEach(r=>{const n=r.querySelector('.lv'),lv=nowS()-(+n.dataset.mt)<SUBLIVE;setText(n,lv?'在忙':'');Clawd.set(r.querySelector('.clawd'),Clawd.F(lv?'mini-crabwalk':'mini-sleep'))});
+  const pt=$('#dPortrait');Clawd.set(pt.querySelector('.actor .clawd'),poseFor(it));
+  fillHelpers(pt.querySelector('.helpers'),it);
+}
+function openDetail(sid,agent,instant){
+  if(!sid)return;
+  const was=!!S.open;
+  const same=S.open&&S.open.sid===sid&&S.open.agent===agent;
+  S.open={sid,agent:agent||null,all:false};
+  const h='#'+sid+(agent?'/'+agent:'');
+  // 从田垄点进来就 push 一条历史，浏览器「后退」能回到田垄；详情之间切换只 replace
+  if(location.hash!==h){if(was)history.replaceState(history.state,'',location.pathname+location.search+h);else history.pushState({ccmon:1},'',location.pathname+location.search+h)}
+  document.body.classList.toggle('instant',!!instant);
+  document.body.classList.remove('log-open');document.body.classList.add('open');
+  S.sideSig='';$('#dFacts').dataset.v='';delete $('#dTitle').dataset.v;delete $('#dTitle').dataset.h;$('#dTitle').textContent='';
+  refreshDetail();
+  if(!same||!S.es)openStream();
+}
+function closeDetail(){
+  // 详情是 push 进来的就真的后退一步（hashchange 会再调回这里，那时 state 已是 null）
+  if(location.hash&&history.state&&history.state.ccmon){history.back();return}
+  if(S.es){S.es.close();S.es=null}
+  S.open=null;document.body.classList.remove('instant','open');
+  if(location.hash)history.replaceState(null,'',location.pathname+location.search);
+}
+$('#xbtn').innerHTML=spr(XBTN,BASE,4);
+$('#xbtn').onclick=closeDetail;
+$('#detail').addEventListener('click',e=>{
+  const back=e.target.closest('[data-back]');if(back){openDetail(S.open.sid,null);return}
+  const ag=e.target.closest('[data-agent]');if(ag){openDetail(S.open.sid,ag.dataset.agent);return}
+  const f=e.target.closest('[data-file]');if(f){showModal('完整输出 · '+f.dataset.file,'/api/file?p='+encodeURIComponent(f.dataset.file));return}
+  const r=e.target.closest('[data-ln]');
+  if(r){const it=findItem(S.open.sid);const qs=new URLSearchParams({sid:(it&&it.realSid)||S.open.sid,ln:r.dataset.ln});if(S.open.agent)qs.set('agent',S.open.agent);
+    showModal(`原始记录 · 第 ${r.dataset.ln} 行`,'/api/line?'+qs);return}
+  const c=e.target.closest('.cap');if(c&&c.dataset.b){const b=document.getElementById(c.dataset.b);if(b){b.classList.toggle('on');c.classList.toggle('open')}return}
+  const m=e.target.closest('.more');if(m){const L=m.closest('.letter');L.classList.toggle('full');m.textContent=L.classList.contains('full')?'收起':'展开全文'}
+});
+feed.addEventListener('scroll',()=>{const b=atBottom();S.follow=b;$('#follow').classList.toggle('show',!b)});
+$('#follow').onclick=()=>{feed.scrollTop=feed.scrollHeight;S.follow=true;$('#follow').classList.remove('show')};
+
+/* ---------- 系统消息开关 ---------- */
+function setMeta(on){LS.ccmonMeta=on?'1':'0';$('#tgMeta').classList.toggle('on',on);feed.classList.toggle('show-meta',on)}
+$('#tgMeta').onclick=()=>setMeta(!$('#tgMeta').classList.contains('on'));
+setMeta(LS.ccmonMeta==='1');
+
+/* ---------- 弹窗 ---------- */
+async function showModal(title,url){
+  $('#mTitle').textContent=title;$('#mBody').textContent='加载中…';
+  $('#modal').classList.add('show');document.body.classList.add('modal');
+  try{const r=await fetch(url);$('#mBody').textContent=noAnsi(await r.text())}catch(err){$('#mBody').textContent='加载失败：'+err.message}
+}
+function closeModal(){$('#modal').classList.remove('show');document.body.classList.remove('modal')}
+$('#mClose').onclick=closeModal;
+
+/* ================= 全局交互 + 启动 ================= */
+$('#veil').onclick=()=>{if(document.body.classList.contains('modal'))closeModal();else{closeDetail();document.body.classList.remove('log-open')}};
+document.addEventListener('click',e=>{if(!e.target.closest('#log,#logbtn'))document.body.classList.remove('log-open')});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
+  if(document.body.classList.contains('modal'))closeModal();else if(S.open)closeDetail();else document.body.classList.remove('log-open')});
+function fromHash(instant){
+  const h=decodeURIComponent(location.hash.slice(1));
+  if(!h){if(S.open)closeDetail();return}
+  const [sid,agent]=h.split('/');
+  if(!S.open||S.open.sid!==sid||S.open.agent!==(agent||null))openDetail(sid,agent||null,instant);
+}
+window.addEventListener('hashchange',()=>fromHash(false));
+$('#logo').innerHTML=`${ptext('CCMON',4,'#4a2410','#e6ae66')}<small><span class="nm">会话农场</span><span class="bk">← 回田垄</span></small>`;
+// 左上角的 CCMON 牌子：点了回总览（关掉详情和日志本，滚回顶上）
+$('#logo').onclick=()=>{if(S.open)closeDetail();document.body.classList.remove('log-open');window.scrollTo({top:0})};
+$('#hint').innerHTML=`${spr(SPROUT,BASE,3)}<span>白天 = <b>在干活</b>　入夜 = <b>闲着，该回去看看了</b></span>`;
+soundUI();
+$('#logbtn').innerHTML=`${spr(BOOK,BASE,4)}<span class="lt"><b>收成日志</b><span>等台式机回话…</span></span>`;
+tickClock();
+setInterval(()=>{tickClock();for(const L of S.lanes.values())tickLane(L);tickDetail()},1000);
+Clawd.preload();
+poll();
+fromHash(true);
+</script>
+</body>
+</html>

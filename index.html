@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Claude 监控</title>
+<script>
+// 入口：跳到上次用的主题（各主题切换时会写 localStorage.ccmonTheme），带上 hash 以便还原打开的会话。
+// 主题：/cats 宿舍（默认）、/farm 农场、/night 夜景公寓。旧版界面在 /v1。
+const t = localStorage.ccmonTheme;
+location.replace("/" + (["cats", "farm", "night"].includes(t) ? t : "cats") + location.hash);
+</script>
+</head>
+<body><noscript>需要开启 JavaScript。</noscript></body>
+</html>
