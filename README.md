@@ -5,7 +5,7 @@
 
 *A tiny LAN dashboard that shows every Claude Code session on your machine as a pixel Clawd: working, idle, or waiting for you. Read-only, zero dependencies (Python stdlib).*
 
-![Clawd 宿舍 · 夜色](docs/screenshots/cats.png)
+![ccmon 演示：会话忙完、醒来开工、实时时间线、三个主题](docs/demo.gif)
 
 ## 能看到什么
 

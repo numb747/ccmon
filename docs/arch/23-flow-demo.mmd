@@ -1,0 +1,18 @@
+flowchart LR
+  demo_main[演示入口<br/>demo.main] -->|临时目录当 HOME| build_home[造假 ~/.claude<br/>build]
+  build_home -->|写 4 个在线会话| fake_sessions[("假会话状态<br/>sessions/*.json")]
+  build_home -->|写 8 段对话 + 子代理| fake_projects[("假对话记录<br/>projects/*.jsonl")]
+  build_home -->|写可执行脚本| fake_claude[假 claude 命令<br/>cat agents.json]
+  build_home -->|起线程| keep_busy[子代理保活<br/>keep_busy]
+  keep_busy -.每 2 秒 touch.-> fake_projects
+  demo_main -->|"子进程 HOME / PATH / CCMON_PORT=18799"| app_main[正常的后端<br/>app.main]
+  app_main -->|"claude agents --json 命中假命令"| fake_claude
+  app_main -->|"Path.home() 下读"| fake_sessions
+  app_main -->|"Path.home() 下读"| fake_projects
+
+  %% @src demo_main scripts/demo.py def main
+  %% @src build_home scripts/demo.py def build
+  %% @src fake_claude scripts/demo.py fake.write_text
+  %% @src keep_busy scripts/demo.py def keep_busy
+  %% @src app_main app.py def main
+  %% @link app_main 10-modules.mmd

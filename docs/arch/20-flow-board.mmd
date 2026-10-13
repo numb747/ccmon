@@ -1,0 +1,32 @@
+flowchart LR
+  board_run[后台循环<br/>Board.run] -->|每 2 秒| fetch_agents[拉权威会话列表<br/>C.fetch_agents]
+  fetch_agents -->|子进程| claude_cli[[claude agents --json]]
+  board_run -->|每 1 秒| build[组装看板<br/>Board.build]
+  build -->|覆盖 status| refresh[用状态文件刷新<br/>C.refresh_from_files]
+  refresh -->|读| sessions_dir[("会话状态文件<br/>~/.claude/sessions/")]
+  build -->|分桶| group[分组 + 刚完成保鲜<br/>C.group_agents]
+  group -->|逐个判| classify[判状态<br/>C.classify]
+  group -->|status_since 读| sessions_dir
+  build -->|每个会话| describe[标题 / 子代理<br/>describe + MetaCache]
+  describe -->|增量读| projects_dir[("对话记录 jsonl<br/>~/.claude/projects/")]
+  build -->|glob 最近 24 小时| projects_dir
+  board_run -->|序列化写入| payload[(缓存 JSON<br/>Board.payload)]
+  api_sessions[接口<br/>GET /api/sessions] -->|加锁读| payload
+  poll[前端轮询 每 1.5 秒<br/>poll] -->|HTTP| api_sessions
+  poll -->|提示音 / 标签页图标| observe[提醒<br/>CCAlert.observe]
+  poll -->|renderBunks| pick[选 Clawd 动画<br/>Clawd.pick]
+
+  %% @src board_run app.py def run
+  %% @src fetch_agents ccstatus.py def fetch_agents
+  %% @src build app.py def build
+  %% @src refresh ccstatus.py def refresh_from_files
+  %% @src group ccstatus.py def group_agents
+  %% @src classify ccstatus.py def classify
+  %% @src describe app.py def describe
+  %% @src payload app.py self.payload = b'
+  %% @src api_sessions app.py elif u.path == "/api/sessions"
+  %% @src poll cats.html async function poll
+  %% @src observe assets/ccmon/alert.js function observe
+  %% @src pick assets/clawd/clawd.js function pick
+  %% @link poll 31-themes.mmd
+  %% @link api_sessions 30-backend.mmd

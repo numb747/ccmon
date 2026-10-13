@@ -1,0 +1,29 @@
+flowchart LR
+  select[点开某个会话<br/>select] --> open_stream[建 SSE 连接<br/>openStream]
+  open_stream -->|"SSE /api/stream?sid=&agent="| stream[推送循环<br/>Handler.stream]
+  stream -->|定位文件| resolve[主会话 / 子代理 jsonl<br/>resolve_log]
+  resolve -->|C.transcript_of glob| projects_dir[("对话记录 jsonl<br/>~/.claude/projects/")]
+  stream -->|首次 + 每 0.4 秒| tail_read[按字节偏移增量读<br/>Tail.read_new]
+  tail_read -->|seek 读新增| projects_dir
+  tail_read -->|每个完整行| parse_line[转成前端事件<br/>parse_line]
+  stream -.event: init / more.-> add_events[追加到时间线<br/>addEvents]
+  stream -.event: reset 文件被重写.-> open_stream
+  add_events -->|逐条| render[渲染一条<br/>render]
+  modal[弹窗看全文<br/>showModal] -->|GET /api/line| raw_line[原始 JSON 行<br/>Handler.raw_line]
+  modal -->|GET /api/file| tool_file[落盘的大输出<br/>Handler.tool_file]
+  raw_line -->|定位文件| resolve
+  tool_file -->|只许 tool-results/ 下| projects_dir
+
+  %% @src select cats.html function select
+  %% @src open_stream cats.html function openStream
+  %% @src stream app.py def stream
+  %% @src resolve app.py def resolve_log
+  %% @src tail_read app.py def read_new
+  %% @src parse_line app.py def parse_line
+  %% @src add_events cats.html function addEvents
+  %% @src render cats.html function render(e) {
+  %% @src modal cats.html async function showModal
+  %% @src raw_line app.py def raw_line
+  %% @src tool_file app.py def tool_file
+  %% @link stream 30-backend.mmd
+  %% @link select 31-themes.mmd

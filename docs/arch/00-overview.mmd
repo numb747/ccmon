@@ -1,0 +1,19 @@
+flowchart LR
+  user([用户<br/>另一台设备的浏览器]) -->|打开 /cats /farm /night| frontend[前端主题页<br/>cats / farm / night.html]
+  frontend -->|"轮询 /api/sessions<br/>SSE /api/stream"| server[后端服务<br/>app.py]
+  server -->|读 / 首次生成| pwfile[(访问密码<br/>.password)]
+  server -->|按字节偏移增量读| projects_dir[("对话记录 jsonl<br/>~/.claude/projects/")]
+  server -->|导入调用| status[会话状态判据<br/>ccstatus.py]
+  status -->|子进程| claude_cli[[claude agents --json]]
+  status -->|读| sessions_dir[("会话状态文件<br/>~/.claude/sessions/")]
+  status -->|glob 找 transcript| projects_dir
+  fetch_assets[素材下载脚本<br/>fetch-assets.sh] -->|curl 下载 svg / mp3| upstream[[clawd-on-desk<br/>GitHub]]
+
+  %% @src frontend cats.html async function poll
+  %% @src server app.py def main
+  %% @src status ccstatus.py def group_agents
+  %% @src fetch_assets scripts/fetch-assets.sh set -euo pipefail
+  %% @link frontend 31-themes.mmd
+  %% @link server 10-modules.mmd
+  %% @link status 20-flow-board.mmd
+  %% @commit df060b1+dirty

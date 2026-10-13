@@ -1,0 +1,29 @@
+flowchart LR
+  user([浏览器]) -->|GET 页面 / API| do_get[路由入口<br/>Handler.do_GET]
+  do_get -->|检查| logged_in[已登录？<br/>Handler.logged_in]
+  logged_in -->|先看来源 IP| is_local[本机且非代理转发才免密<br/>Handler.is_local]:::changed
+  is_local -->|"开关关了 / 带 X-Forwarded-For 等头 → 不算本机"| local_noauth["本机免密开关<br/>CCMON_LOCAL_NOAUTH / PROXY_HEADERS"]:::changed
+  logged_in -->|"cookie ccmon_auth 比对"| auth_token[令牌 = HMAC 密码<br/>auth_token]
+  logged_in -->|每次现读| password[取密码<br/>password]:::changed
+  password -->|"读 / 不存在就生成 xxxx-xxxx-xxxx"| pwfile[(访问密码<br/>.password)]
+  do_get -->|"页面未登录 303 → /login?next="| login_page[登录页<br/>Handler.login_page]
+  do_get -->|API 未登录回 401| fetch_hook[401 自动跳登录<br/>alert.js 包装 fetch]
+  fetch_hook -->|"跳 /login?next=原页面#hash"| login_page
+  login_page -->|POST /login 表单| do_post[提交密码<br/>Handler.do_POST]:::changed
+  do_post -->|"先占名额，超限回 429；成功后清掉该 IP"| limiter["登录限速<br/>LoginLimiter（每 IP 5 次 / 合计 30 次 / 5 分钟）"]:::changed
+  do_post -->|比对| password
+  do_post -->|"成功：Set-Cookie 一年 + 303 回 next"| auth_token
+
+  %% @src do_get app.py def do_GET
+  %% @src logged_in app.py def logged_in
+  %% @src is_local app.py def is_local
+  %% @src local_noauth app.py LOCAL_NOAUTH = os.environ
+  %% @src auth_token app.py def auth_token
+  %% @src password app.py def password
+  %% @src login_page app.py def login_page
+  %% @src fetch_hook assets/ccmon/alert.js window.fetch = async
+  %% @src do_post app.py def do_POST
+  %% @src limiter app.py class LoginLimiter
+  %% @link do_get 30-backend.mmd
+
+  classDef changed stroke:#e0af68,stroke-width:3px,stroke-dasharray:7 4

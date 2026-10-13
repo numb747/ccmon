@@ -1,0 +1,42 @@
+flowchart LR
+  index_html[入口跳转<br/>index.html] -->|跳到上次用的主题| themes[三个主题页<br/>cats / farm / night.html]
+  v1[旧版开发者界面<br/>index-v1.html]
+  themes -->|script 引入| clawd_js[Clawd 姿势与取景<br/>clawd.js]
+  themes -->|script 引入| alert_js[提示音与标签页图标<br/>alert.js]
+  clawd_js -->|img 引用 svg| assets[(第三方素材<br/>assets/clawd, assets/sounds)]
+  alert_js -->|播放 mp3| assets
+  themes -->|"GET /api/sessions<br/>SSE /api/stream"| handler[HTTP 路由<br/>Handler]
+  v1 -->|"GET /api/sessions<br/>SSE /api/stream"| handler
+  handler -->|校验 cookie| auth[密码、令牌与登录限速<br/>password / auth_token / LoginLimiter]:::changed
+  handler -->|读缓存 payload| board[状态看板线程<br/>Board / describe]
+  handler -->|增量读 + 解析| tail[transcript 解析<br/>Tail / parse_line]
+  handler -->|transcript_of| ccstatus[会话状态判据<br/>ccstatus.py]
+  board -->|"fetch_agents / group_agents"| ccstatus
+  app_main[启动<br/>app.main] -->|起后台线程| board
+  app_main -->|ThreadingHTTPServer| handler
+  service[systemd 用户服务<br/>ccmon.service] -->|ExecStart| app_main
+  demo[假数据演示<br/>demo.py] -->|子进程 + 假 HOME| app_main
+  fetch_assets[素材下载脚本<br/>fetch-assets.sh] -->|curl 写入| assets
+
+  %% @src index_html index.html location.replace
+  %% @src themes cats.html async function poll
+  %% @src v1 index-v1.html <script>
+  %% @src clawd_js assets/clawd/clawd.js function pick
+  %% @src alert_js assets/ccmon/alert.js function observe
+  %% @src handler app.py class Handler
+  %% @src auth app.py def password
+  %% @src board app.py class Board
+  %% @src tail app.py class Tail
+  %% @src ccstatus ccstatus.py def group_agents
+  %% @src app_main app.py def main
+  %% @src service contrib/ccmon.service ExecStart=/usr/bin/python3 %h/ccmon/app.py
+  %% @src demo scripts/demo.py def main
+  %% @src fetch_assets scripts/fetch-assets.sh set -euo pipefail
+  %% @link themes 31-themes.mmd
+  %% @link handler 30-backend.mmd
+  %% @link board 20-flow-board.mmd
+  %% @link tail 21-flow-stream.mmd
+  %% @link auth 22-flow-login.mmd
+  %% @link demo 23-flow-demo.mmd
+
+  classDef changed stroke:#e0af68,stroke-width:3px,stroke-dasharray:7 4

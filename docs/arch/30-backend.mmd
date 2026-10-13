@@ -1,0 +1,39 @@
+flowchart LR
+  do_get[GET 路由<br/>Handler.do_GET] -->|除 /login 外先检查| auth[鉴权<br/>logged_in / is_local / password / auth_token]:::changed
+  do_post[POST /login<br/>Handler.do_POST]:::changed -->|比对密码 发 cookie| auth
+  do_post -->|先占名额 超限回 429| limiter[登录限速<br/>LoginLimiter]:::changed
+  do_get -->|"/ /cats /farm /night /v1"| pages[页面路由表<br/>PAGES]
+  do_get -->|"/api/sessions 加锁读 payload"| board[状态看板线程<br/>Board]
+  board -->|每个会话| meta[标题 / 子代理缓存<br/>describe / MetaCache]
+  do_get -->|/api/stream| stream[SSE 推送<br/>Handler.stream]
+  do_get -->|/api/line| raw_line[原始 JSON 行<br/>Handler.raw_line]
+  do_get -->|/api/file| tool_file[落盘的大输出<br/>Handler.tool_file]
+  do_get -->|"/assets/* 与 /login/clawd.svg"| asset_file[静态素材<br/>Handler.asset_file]
+  stream -->|定位文件| resolve[主会话 / 子代理<br/>resolve_log]
+  raw_line -->|定位文件| resolve
+  stream -->|增量读 + 解析| tail[transcript 解析<br/>Tail / parse_line]
+  tail -->|seek 读新增| projects_dir[("对话记录 jsonl<br/>~/.claude/projects/")]
+  meta -->|增量读关键行| projects_dir
+  resolve -->|C.transcript_of| projects_dir
+  tool_file -->|只许 tool-results/ 下| projects_dir
+  asset_file -->|白名单后缀| assets_dir[(仓库内 assets/)]
+
+  %% @src do_get app.py def do_GET
+  %% @src auth app.py def logged_in
+  %% @src do_post app.py def do_POST
+  %% @src limiter app.py class LoginLimiter
+  %% @src pages app.py PAGES =
+  %% @src board app.py class Board
+  %% @src meta app.py class MetaCache
+  %% @src stream app.py def stream
+  %% @src raw_line app.py def raw_line
+  %% @src tool_file app.py def tool_file
+  %% @src asset_file app.py def asset_file
+  %% @src resolve app.py def resolve_log
+  %% @src tail app.py class Tail
+  %% @link auth 22-flow-login.mmd
+  %% @link board 20-flow-board.mmd
+  %% @link stream 21-flow-stream.mmd
+  %% @link pages 31-themes.mmd
+
+  classDef changed stroke:#e0af68,stroke-width:3px,stroke-dasharray:7 4
