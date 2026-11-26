@@ -1,11 +1,11 @@
 # systemd 用户服务示例：复制到 ~/.config/systemd/user/ccmon.service
-# 假设仓库 clone 在 ~/src/numb747/ccmon；claude 命令在 ~/.local/bin（Claude Code 默认装在那里）
+# 假设仓库 clone 在 ~/ccmon；claude 命令在 ~/.local/bin（Claude Code 默认装在那里）
 [Unit]
 Description=ccmon · Claude Code 会话监控站
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 %h/src/numb747/ccmon/app.py
+ExecStart=/usr/bin/python3 %h/ccmon/app.py
 Environment=CCMON_PORT=18767
 Environment=PYTHONUNBUFFERED=1
 # 本机上还有反向代理转发到 ccmon 的话，取消下面这行的注释，让本机访问也要密码
